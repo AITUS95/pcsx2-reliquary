@@ -16,19 +16,24 @@
 #include "DEV9/SimpleQueue.h"
 
 class ChdHddImage;
+class VhdHddImage;
+class Error;
 
 class ATA
 {
 public:
 	//Transfer
 	bool dmaReady = false;
-	int nsector = 0;     //sector count
+	int nsector = 0; //sector count
 	int nsectorLeft = 0; //sectors left to transfer
 private:
 	bool lba48Supported = false;
 
 	std::FILE* hddImage = nullptr;
 	std::unique_ptr<ChdHddImage> chdHddImage;
+	std::unique_ptr<VhdHddImage> vhdHddImage;
+	std::atomic_bool ioFailed{false};
+	std::shared_ptr<std::atomic_bool> ioSessionActive = std::make_shared<std::atomic_bool>(false);
 	u64 hddImageSize;
 
 	bool hddSparse = false;
@@ -215,6 +220,7 @@ private:
 	//Transfer
 	void IO_Thread();
 	void IO_Read();
+	void IO_Fail(const Error& error);
 	bool IO_Write();
 	bool IO_SparseZero(u64 byteOffset, u64 byteSize);
 	void IO_SparseCacheUpdateLocation(u64 Offset);
@@ -226,6 +232,7 @@ private:
 	void HDD_ReadAsync(void (ATA::*drqCMD)());
 	void HDD_ReadSync(void (ATA::*drqCMD)());
 	bool HDD_CanAssessOrSetError();
+	void HDD_SetIoError();
 	void HDD_SetErrorAtTransferEnd();
 
 	//Commands

@@ -35,7 +35,7 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(DepsIncludeDir)\SDL3</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(DepsIncludeDir)\freetype2</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\include;$(SolutionDir)3rdparty</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\fatfs\source</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\minivhd\src;$(SolutionDir)3rdparty\fatfs\source</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\fmt\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\des</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\winwil\include</AdditionalIncludeDirectories>
@@ -507,6 +507,8 @@
     <ClCompile Include="HwWrite.cpp" />
     <ClCompile Include="Cache.cpp" />
     <ClCompile Include="ChdHddImage.cpp" />
+    <ClCompile Include="VhdHddImage.cpp" />
+    <ClCompile Include="HddImageOperations.cpp" />
     <ClCompile Include="Memory.cpp" />
     <ClCompile Include="x86\iR5900Analysis.cpp">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
@@ -978,6 +980,8 @@
     <ClInclude Include="Common.h" />
     <ClInclude Include="Config.h" />
     <ClInclude Include="ChdHddImage.h" />
+    <ClInclude Include="VhdHddImage.h" />
+    <ClInclude Include="HddImageOperations.h" />
     <ClInclude Include="SaveState.h" />
     <ClInclude Include="Counters.h" />
     <ClInclude Include="Dmac.h" />
@@ -1116,6 +1120,9 @@
     </ProjectReference>
     <ProjectReference Include="..\3rdparty\demangler\demangler.vcxproj">
       <Project>{d31a6dd1-99ca-41d8-a230-1fae913c8989}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\3rdparty\minivhd\minivhd.vcxproj">
+      <Project>{9A84B734-AD69-43F7-8293-CCE4E914003B}</Project>
     </ProjectReference>
     <ProjectReference Include="..\3rdparty\fatfs\fatfs.vcxproj">
       <Project>{f45d0ff0-617c-4a12-b1c3-7d716ed8a315}</Project>

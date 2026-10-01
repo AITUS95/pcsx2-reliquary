@@ -78,6 +78,7 @@ set(pcsx2Sources
 	Gif_Unit.cpp
 	GS.cpp
 	GSDumpReplayer.cpp
+	HddImageOperations.cpp
 	Host.cpp
 	Hotkeys.cpp
 	Hw.cpp
@@ -126,6 +127,7 @@ set(pcsx2Sources
 	SourceLog.cpp
 	SPR.cpp
 	StateWrapper.cpp
+	VhdHddImage.cpp
 	Vif0_Dma.cpp
 	Vif1_Dma.cpp
 	Vif1_MFIFO.cpp
@@ -169,6 +171,7 @@ set(pcsx2Headers
 	GS.h
 	GSDumpReplayer.h
 	Hardware.h
+	HddImageOperations.h
 	Host.h
 	Hw.h
 	INISettingsInterface.h
@@ -207,6 +210,7 @@ set(pcsx2Headers
 	SPR.h
 	SupportURLs.h
 	StateWrapper.h
+	VhdHddImage.h
 	Vif_Dma.h
 	Vif.h
 	Vif_Unpack.h
@@ -1218,6 +1222,7 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
 	imgui
 	fmt::fmt
 	libchdr
+	minivhd
 	libcdio::libcdio
 	libzip::zip
 	cpuinfo

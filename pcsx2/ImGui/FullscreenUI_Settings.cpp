@@ -30,6 +30,7 @@
 
 #include "common/Console.h"
 #include "common/Error.h"
+#include "common/ScopedGuard.h"
 #include "common/FileSystem.h"
 #include "common/Path.h"
 #include "common/SettingsInterface.h"
@@ -55,60 +56,51 @@ namespace FullscreenUI
 	class HddCreateInProgress : public HddCreate
 	{
 	private:
-		std::string m_dialogId;
+		static constexpr const char* DIALOG_ID = "hdd_create";
 		int m_reqMiB = 0;
 
-		static std::vector<std::shared_ptr<HddCreateInProgress>> s_activeOperations;
-		static std::mutex s_operationsMutex;
-		static std::atomic_int s_nextOperationId;
+		static std::shared_ptr<HddCreateInProgress> s_activeOperation;
+		static std::mutex s_operationMutex;
 
 	public:
-		HddCreateInProgress(const std::string& dialogId)
-			: m_dialogId(dialogId)
+		static void StartCreation(const std::string& filePath, int sizeInGB, std::function<void()> completed)
 		{
-		}
-
-		static bool StartCreation(const std::string& filePath, int sizeInGB, bool use48BitLBA)
-		{
-			if (filePath.empty() || sizeInGB <= 0)
-				return false;
-
-			std::string dialogId = fmt::format("hdd_create_{}", s_nextOperationId.fetch_add(1, std::memory_order_relaxed));
-
-			std::shared_ptr<HddCreateInProgress> instance = std::make_shared<HddCreateInProgress>(dialogId);
-
-			// Convert GB to bytes
-			const u64 sizeBytes = static_cast<u64>(sizeInGB) * static_cast<u64>(_1gb);
+			Error error;
+			if (!VMManager::BeginHddImageOperation(&error))
+			{
+				ShowToast(ICON_FA_TRIANGLE_EXCLAMATION, error.GetDescription());
+				return;
+			}
+			ScopedGuard operation_guard([]() { VMManager::EndHddImageOperation(); });
 
 			// Make sure the file doesn't already exist (or delete it if it does)
-			if (FileSystem::FileExists(filePath.c_str()))
+			if (FileSystem::FileExists(filePath.c_str()) && !FileSystem::DeleteFilePath(filePath.c_str()))
 			{
-				if (!FileSystem::DeleteFilePath(filePath.c_str()))
-				{
-					ShowToast(
-						fmt::format("{} HDD Creation Failed", ICON_FA_TRIANGLE_EXCLAMATION),
-						fmt::format("Failed to delete existing HDD image file '{}'. Please check file permissions and try again.", Path::GetFileName(filePath)),
-						5.0f);
-					return false;
-				}
+				ShowToast(
+					fmt::format("{} HDD Creation Failed", ICON_FA_TRIANGLE_EXCLAMATION),
+					fmt::format("Failed to delete existing HDD image file '{}'. Please check file permissions and try again.", Path::GetFileName(filePath)),
+					5.0f);
+				return;
 			}
 
 			// Setup the creation parameters
+			auto instance = std::make_shared<HddCreateInProgress>();
 			instance->filePath = filePath;
-			instance->neededSize = sizeBytes;
+			instance->neededSize = static_cast<u64>(sizeInGB) * static_cast<u64>(_1gb);
 
-			// Register the operation
+			// VMManager reserves one HDD operation at a time.
 			{
-				std::lock_guard<std::mutex> lock(s_operationsMutex);
-				s_activeOperations.push_back(instance);
+				std::lock_guard lock(s_operationMutex);
+				s_activeOperation = instance;
 			}
 
 			// Start the HDD creation
-			std::thread([instance = std::move(instance)]() {
+			std::thread([instance = std::move(instance), completed = std::move(completed)]() {
 				instance->Start();
 
-				if (!instance->errored)
-					MTGS::RunOnGSThread([size_gb = static_cast<int>(instance->neededSize / static_cast<u64>(_1gb))]() {
+				if (!instance->errored && !instance->WasCanceled())
+					MTGS::RunOnGSThread([completed = std::move(completed), size_gb = static_cast<int>(instance->neededSize / static_cast<u64>(_1gb))]() {
+						completed();
 						ShowToast(
 							ICON_FA_CIRCLE_CHECK,
 							fmt::format("HDD image ({} GB) created successfully.", size_gb),
@@ -122,67 +114,113 @@ namespace FullscreenUI
 							3.0f);
 					});
 
-				std::lock_guard<std::mutex> lock(s_operationsMutex);
-				for (auto it = s_activeOperations.begin(); it != s_activeOperations.end(); ++it)
 				{
-					if (it->get() == instance.get())
-					{
-						s_activeOperations.erase(it);
-						break;
-					}
+					std::lock_guard lock(s_operationMutex);
+					s_activeOperation.reset();
 				}
+				VMManager::EndHddImageOperation();
 			}).detach();
-
-			return true;
+			operation_guard.Cancel();
 		}
 
 		static void CancelAllOperations()
 		{
-			std::lock_guard<std::mutex> lock(s_operationsMutex);
-			for (auto& operation : s_activeOperations)
-				operation->SetCanceled();
-			s_activeOperations.clear();
+			std::lock_guard lock(s_operationMutex);
+			if (s_activeOperation)
+				s_activeOperation->SetCanceled();
 		}
 
 	protected:
-		virtual void Init() override
+		void Init() override
 		{
 			m_reqMiB = static_cast<int>((neededSize + ((1024 * 1024) - 1)) / (1024 * 1024));
 			const std::string message = fmt::format("{} Creating HDD Image\n{} / {} MiB", ICON_FA_HARD_DRIVE, 0, m_reqMiB);
-			ImGuiFullscreen::OpenProgressDialog(m_dialogId.c_str(), message, 0, m_reqMiB, 0);
+			ImGuiFullscreen::OpenProgressDialog(DIALOG_ID, message, 0, m_reqMiB, 0);
 		}
 
-		virtual void SetFileProgress(u64 currentSize) override
+		void SetFileProgress(u64 currentSize) override
 		{
 			const int writtenMiB = static_cast<int>((currentSize + ((1024 * 1024) - 1)) / (1024 * 1024));
 			const std::string message = fmt::format("{} Creating HDD Image\n{} / {} MiB", ICON_FA_HARD_DRIVE, writtenMiB, m_reqMiB);
-			ImGuiFullscreen::UpdateProgressDialog(m_dialogId.c_str(), message, 0, m_reqMiB, writtenMiB);
+			ImGuiFullscreen::UpdateProgressDialog(DIALOG_ID, message, 0, m_reqMiB, writtenMiB);
 		}
 
-		virtual void Cleanup() override
+		void Cleanup() override
 		{
-			ImGuiFullscreen::CloseProgressDialog(m_dialogId.c_str());
+			ImGuiFullscreen::CloseProgressDialog(DIALOG_ID);
 		}
 	};
 
-	std::vector<std::shared_ptr<HddCreateInProgress>> HddCreateInProgress::s_activeOperations;
-	std::mutex HddCreateInProgress::s_operationsMutex;
-	std::atomic_int HddCreateInProgress::s_nextOperationId{0};
-
-	bool CreateHardDriveWithProgress(const std::string& filePath, int sizeInGB, bool use48BitLBA)
+	static void CreateHddAtSize(bool game_settings, bool dynamic_vhd, int size_gb)
 	{
-		// Validate size limits based on the LBA mode set
-		const int min_size = use48BitLBA ? 100 : 40;
-		const int max_size = use48BitLBA ? 2000 : 120;
-
-		if (sizeInGB < min_size || sizeInGB > max_size)
-		{
-			ShowToast(ICON_FA_TRIANGLE_EXCLAMATION, fmt::format("Invalid HDD size. Size must be between {} and {} GB.", min_size, max_size));
-			return false;
-		}
-
-		return HddCreateInProgress::StartCreation(filePath, sizeInGB, use48BitLBA);
+		const bool lba48 = size_gb > 120;
+		const std::string filename = fmt::format("DEV9hdd_{}GB_{}.{}", size_gb, lba48 ? "LBA48" : "LBA28", dynamic_vhd ? "vhd" : "raw");
+		const std::string filepath = Path::Combine(EmuFolders::DataRoot, filename);
+		const std::string game_settings_path = game_settings && s_game_settings_interface ? s_game_settings_interface->GetFileName() : std::string();
+		const auto create = [filepath, size_gb, game_settings, game_settings_path]() {
+			HddCreateInProgress::StartCreation(filepath, size_gb, [filepath, game_settings, game_settings_path]() {
+				auto lock = Host::GetSettingsLock();
+				if (game_settings && (!s_game_settings_interface || s_game_settings_interface->GetFileName() != game_settings_path))
+					return;
+				SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
+				bsi->SetStringValue("DEV9/Hdd", "HddFile", filepath.c_str());
+				SetSettingsChanged(bsi);
+			});
+		};
+		if (FileSystem::FileExists(filepath.c_str()))
+			OpenConfirmMessageDialog(FSUI_ICONSTR(ICON_FA_TRIANGLE_EXCLAMATION, "File Already Exists"),
+				fmt::format(FSUI_FSTR("HDD image '{}' already exists. Do you want to overwrite it?"), filename),
+				[create](bool confirmed) { if (confirmed) create(); });
+		else
+			create();
 	}
+
+	static void OpenCustomHddSizeDialog(bool game_settings, bool dynamic_vhd)
+	{
+		OpenInputStringDialog(FSUI_CSTR("Custom HDD Size"), FSUI_STR("Enter HDD size in GiB (40–2000):"), std::string(), FSUI_CSTR("Create"), [game_settings, dynamic_vhd](std::string input) {
+				const auto size = StringUtil::FromChars<int>(input);
+				if (!size || *size < 40 || *size > 2000)
+				{
+					ShowToast(ICON_FA_TRIANGLE_EXCLAMATION, FSUI_STR("HDD size must be between 40 and 2000 GiB."));
+					return;
+				}
+				CreateHddAtSize(game_settings, dynamic_vhd, *size); }, "40", InputFilterType::Numeric);
+	}
+
+	static void OpenHddSizeDialog(bool game_settings, bool dynamic_vhd)
+	{
+		static constexpr int size_values[] = {40, 80, 120, 200};
+		ImGuiFullscreen::ChoiceDialogOptions sizes;
+		for (int size : size_values)
+			sizes.emplace_back(fmt::format("{} GiB", size), size == size_values[0]);
+		sizes.emplace_back(FSUI_STR("Custom..."), false);
+		OpenChoiceDialog(FSUI_CSTR("Select HDD Size"), false, std::move(sizes),
+			[game_settings, dynamic_vhd](s32 index, const std::string&, bool) {
+				CloseChoiceDialog();
+				if (index < 0)
+					return;
+				if (static_cast<size_t>(index) < std::size(size_values))
+					CreateHddAtSize(game_settings, dynamic_vhd, size_values[index]);
+				else
+					OpenCustomHddSizeDialog(game_settings, dynamic_vhd);
+			});
+	}
+
+	static void OpenHddCreateDialog(bool game_settings)
+	{
+		ImGuiFullscreen::ChoiceDialogOptions formats;
+		formats.emplace_back(FSUI_STR("Raw"), true);
+		formats.emplace_back(FSUI_STR("Dynamic VHD"), false);
+		OpenChoiceDialog(FSUI_CSTR("New HDD Image Format"), false, std::move(formats),
+			[game_settings](s32 format, const std::string&, bool) {
+				CloseChoiceDialog();
+				if (format >= 0)
+					OpenHddSizeDialog(game_settings, format == 1);
+			});
+	}
+
+	std::shared_ptr<HddCreateInProgress> HddCreateInProgress::s_activeOperation;
+	std::mutex HddCreateInProgress::s_operationMutex;
 
 	void CancelAllHddOperations()
 	{
@@ -4216,6 +4254,8 @@ void FullscreenUI::DrawNetworkHDDSettingsPage()
 		FileSystem::FindFiles(EmuFolders::DataRoot.c_str(), "*.raw", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES, &results);
 		FileSystem::FindFiles(EmuFolders::DataRoot.c_str(), "*.chd", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_KEEP_ARRAY, &results);
 		FileSystem::FindFiles(EmuFolders::DataRoot.c_str(), "*.CHD", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_KEEP_ARRAY, &results);
+		FileSystem::FindFiles(EmuFolders::DataRoot.c_str(), "*.vhd", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_KEEP_ARRAY, &results);
+		FileSystem::FindFiles(EmuFolders::DataRoot.c_str(), "*.VHD", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_KEEP_ARRAY, &results);
 		for (const FILESYSTEM_FIND_DATA& fd : results)
 		{
 			const std::string full_path = fd.FileName;
@@ -4259,126 +4299,12 @@ void FullscreenUI::DrawNetworkHDDSettingsPage()
 							SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
 							bsi->SetStringValue("DEV9/Hdd", "HddFile", path.c_str());
 							SetSettingsChanged(bsi);
-							ShowToast(ICON_FA_HARD_DRIVE, fmt::format(FSUI_FSTR("Selected HDD image: {}"), Path::GetFileName(path))); }, {"*.raw", "*.chd", "*"}, EmuFolders::DataRoot);
+							ShowToast(ICON_FA_HARD_DRIVE, fmt::format(FSUI_FSTR("Selected HDD image: {}"), Path::GetFileName(path))); }, {"*.raw", "*.chd", "*.vhd", "*"}, EmuFolders::DataRoot);
 				}
 				else if (values[index] == "__create__")
 				{
 					CloseChoiceDialog();
-
-					std::vector<std::pair<std::string, int>> size_options = {
-						{"40 GB (Recommended)", 40},
-						{"80 GB", 80},
-						{"120 GB (Max LBA28)", 120},
-						{"200 GB", 200},
-						{"Custom...", -1}};
-
-					ImGuiFullscreen::ChoiceDialogOptions size_choices;
-					std::vector<int> size_values;
-					for (const auto& [label, size] : size_options)
-					{
-						size_choices.emplace_back(label, false);
-						size_values.push_back(size);
-					}
-
-					OpenChoiceDialog(FSUI_ICONSTR(ICON_FA_PLUS, "Select HDD Size"), false, std::move(size_choices),
-						[game_settings, size_values = std::move(size_values)](s32 size_index, const std::string& size_title, bool size_checked) {
-							if (size_index < 0)
-								return;
-
-							if (size_values[size_index] == -1)
-							{
-								CloseChoiceDialog();
-
-								OpenInputStringDialog(
-									FSUI_ICONSTR(ICON_FA_PEN_TO_SQUARE, "Custom HDD Size"),
-									FSUI_STR("Enter custom HDD size in gigabytes (40–2000):"),
-									std::string(),
-									FSUI_ICONSTR(ICON_FA_CHECK, "Create"),
-									[game_settings](std::string input) {
-										if (input.empty())
-											return;
-
-										std::optional<int> custom_size_opt = StringUtil::FromChars<int>(input);
-										if (!custom_size_opt.has_value())
-										{
-											ShowToast(ICON_FA_TRIANGLE_EXCLAMATION, FSUI_STR("Invalid size. Please enter a number between 40 and 2000."));
-											return;
-										}
-										int custom_size_gb = custom_size_opt.value();
-
-										if (custom_size_gb < 40 || custom_size_gb > 2000)
-										{
-											ShowToast(ICON_FA_TRIANGLE_EXCLAMATION, FSUI_STR("HDD size must be between 40 GB and 2000 GB."));
-											return;
-										}
-
-										const bool lba48 = (custom_size_gb > 120);
-										const std::string filename = fmt::format("DEV9hdd_{}GB_{}.raw", custom_size_gb, lba48 ? "LBA48" : "LBA28");
-										const std::string filepath = Path::Combine(EmuFolders::DataRoot, filename);
-
-										if (FileSystem::FileExists(filepath.c_str()))
-										{
-											OpenConfirmMessageDialog(
-												FSUI_ICONSTR(ICON_FA_TRIANGLE_EXCLAMATION, "File Already Exists"),
-												fmt::format(FSUI_FSTR("HDD image '{}' already exists. Do you want to overwrite it?"), filename),
-												[filepath, custom_size_gb, lba48, game_settings](bool confirmed) {
-													if (confirmed)
-													{
-														auto lock = Host::GetSettingsLock();
-														SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
-														bsi->SetStringValue("DEV9/Hdd", "HddFile", filepath.c_str());
-														SetSettingsChanged(bsi);
-														FullscreenUI::CreateHardDriveWithProgress(filepath, custom_size_gb, lba48);
-													}
-												});
-										}
-										else
-										{
-											auto lock = Host::GetSettingsLock();
-											SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
-											bsi->SetStringValue("DEV9/Hdd", "HddFile", filepath.c_str());
-											SetSettingsChanged(bsi);
-											FullscreenUI::CreateHardDriveWithProgress(filepath, custom_size_gb, lba48);
-										}
-									},
-									"40",
-									InputFilterType::Numeric);
-								return;
-							}
-
-							const int size_gb = size_values[size_index];
-							const bool lba48 = (size_gb > 120);
-
-							const std::string filename = fmt::format("DEV9hdd_{}GB_{}.raw", size_gb, lba48 ? "LBA48" : "LBA28");
-							const std::string filepath = Path::Combine(EmuFolders::DataRoot, filename);
-
-							if (FileSystem::FileExists(filepath.c_str()))
-							{
-								OpenConfirmMessageDialog(
-									FSUI_ICONSTR(ICON_FA_TRIANGLE_EXCLAMATION, "File Already Exists"),
-									fmt::format(FSUI_FSTR("HDD image '{}' already exists. Do you want to overwrite it?"), filename),
-									[filepath, size_gb, lba48, game_settings](bool confirmed) {
-										if (confirmed)
-										{
-											auto lock = Host::GetSettingsLock();
-											SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
-											bsi->SetStringValue("DEV9/Hdd", "HddFile", filepath.c_str());
-											SetSettingsChanged(bsi);
-											FullscreenUI::CreateHardDriveWithProgress(filepath, size_gb, lba48);
-										}
-									});
-							}
-							else
-							{
-								auto lock = Host::GetSettingsLock();
-								SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
-								bsi->SetStringValue("DEV9/Hdd", "HddFile", filepath.c_str());
-								SetSettingsChanged(bsi);
-								FullscreenUI::CreateHardDriveWithProgress(filepath, size_gb, lba48);
-							}
-
-							CloseChoiceDialog();
-						});
+					OpenHddCreateDialog(game_settings);
 				}
 				else
 				{

@@ -409,6 +409,55 @@
         </property>
        </widget>
       </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="hddFormatLabel">
+        <property name="text">
+         <string>New Image Format:</string>
+        </property>
+        <property name="buddy">
+         <cstring>hddFormat</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QComboBox" name="hddFormat">
+        <item>
+         <property name="text">
+          <string>Raw</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Dynamic VHD</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="3">
+       <layout class="QHBoxLayout" name="hddOperationsLayout">
+        <item>
+         <widget class="QPushButton" name="hddToVhd">
+          <property name="text">
+           <string>Raw to Dynamic VHD...</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="hddToRaw">
+          <property name="text">
+           <string>VHD to Raw...</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="hddCompact">
+          <property name="text">
+           <string>Compact VHD...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
      </layout>
     </widget>
    </item>
@@ -454,7 +503,11 @@
   <tabstop>hddBrowseFile</tabstop>
   <tabstop>hddSizeSlider</tabstop>
   <tabstop>hddSizeSpinBox</tabstop>
+  <tabstop>hddFormat</tabstop>
   <tabstop>hddCreate</tabstop>
+  <tabstop>hddToVhd</tabstop>
+  <tabstop>hddToRaw</tabstop>
+  <tabstop>hddCompact</tabstop>
  </tabstops>
  <resources/>
  <connections/>

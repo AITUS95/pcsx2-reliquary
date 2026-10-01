@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "ChdHddImage.h"
+#include "VhdHddImage.h"
 
 #include "common/Console.h"
 #include "common/MD5Digest.h"
@@ -112,6 +113,8 @@ std::optional<u64> ChdHddImage::GetHddImageLogicalSize(const std::string& path)
 {
 	if (IsChdFileName(path))
 		return GetChdLogicalSize(path);
+	if (VhdHddImage::IsVhdFileName(path))
+		return VhdHddImage::GetLogicalSize(path);
 
 	const s64 size = FileSystem::GetPathFileSize(path.c_str());
 	if (size < 0)

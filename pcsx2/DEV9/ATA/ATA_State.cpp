@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "common/Assertions.h"
+#include "common/Error.h"
 #include "common/FileSystem.h"
 
 #include "ATA.h"
 #include "ChdHddImage.h"
+#include "VhdHddImage.h"
 #include "DEV9/DEV9.h"
 
 #if _WIN32
@@ -46,6 +48,8 @@ int ATA::Open(const std::string& hddPath)
 	if (!FileSystem::FileExists(hddPath.c_str()))
 		return -1;
 
+	ioFailed.store(false);
+	const bool use_vhd = VhdHddImage::IsVhdFileName(hddPath);
 	const bool use_chd = ChdHddImage::IsChdFileName(hddPath);
 	if (use_chd)
 	{
@@ -57,6 +61,18 @@ int ATA::Open(const std::string& hddPath)
 			return -1;
 		}
 		hddImageSize = chdHddImage->GetSize();
+	}
+	else if (use_vhd)
+	{
+		vhdHddImage = std::make_unique<VhdHddImage>();
+		Error error;
+		if (!vhdHddImage->Open(hddPath, &error))
+		{
+			Console.Error("DEV9: ATA: Failed to open VHD: %s", error.GetDescription().c_str());
+			vhdHddImage.reset();
+			return -1;
+		}
+		hddImageSize = vhdHddImage->GetSize();
 	}
 	else
 	{
@@ -115,7 +131,7 @@ int ATA::Open(const std::string& hddPath)
 
 	CreateHDDinfo(hddImageSize / 512);
 
-	if (!use_chd)
+	if (!use_chd && !use_vhd)
 		InitSparseSupport(hddPath);
 
 	{
@@ -124,6 +140,7 @@ int ATA::Open(const std::string& hddPath)
 		ioWrite = false;
 	}
 
+	ioSessionActive = std::make_shared<std::atomic_bool>(true);
 	ioThread = std::thread(&ATA::IO_Thread, this);
 	ioRunning = true;
 
@@ -265,6 +282,7 @@ void ATA::InitSparseSupport(const std::string& hddPath)
 
 void ATA::Close()
 {
+	ioSessionActive->store(false);
 	//Wait for async code to finish
 	if (ioRunning)
 	{
@@ -304,6 +322,13 @@ void ATA::Close()
 		hddImage = nullptr;
 	}
 	chdHddImage.reset();
+	if (vhdHddImage)
+	{
+		Error error;
+		if (!vhdHddImage->Close(&error))
+			IO_Fail(error);
+		vhdHddImage.reset();
+	}
 
 	delete[] readBuffer;
 	readBuffer = nullptr;
@@ -531,15 +556,20 @@ void ATA::Write(u32 addr, u16 value, int width)
 
 void ATA::Async(uint cycles)
 {
-	if (!hddImage && !chdHddImage)
+	if (!hddImage && !chdHddImage && !vhdHddImage)
 		return;
+	if (ioFailed.load())
+	{
+		HDD_SetIoError();
+		return;
+	}
 
 	if ((regStatus & (ATA_STAT_BUSY | ATA_STAT_DRQ)) == 0 ||
 		awaitFlush || (waitingCmd != nullptr))
 	{
 		{
 			std::lock_guard ioSignallock(ioMutex);
-			if (ioRead || ioWrite)
+			if (ioRead || ioWrite || ioFailed.load())
 				//IO Running
 				return;
 		}
