@@ -115,6 +115,7 @@
     <None Include="x86\microVU_Branch.inl" />
     <None Include="x86\microVU_Clamp.inl" />
     <None Include="x86\microVU_Compile.inl" />
+    <None Include="x86\microVU_Communication.inl" />
     <None Include="x86\microVU_Execute.inl" />
     <None Include="x86\microVU_Flags.inl" />
     <None Include="x86\microVU_Log.inl" />

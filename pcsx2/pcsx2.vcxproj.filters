@@ -318,6 +318,9 @@
     <None Include="x86\microVU_Compile.inl">
       <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
     </None>
+    <None Include="x86\microVU_Communication.inl">
+      <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
+    </None>
     <None Include="x86\microVU_Execute.inl">
       <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
     </None>

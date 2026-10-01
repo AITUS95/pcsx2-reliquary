@@ -99,10 +99,13 @@ void mVUDTendProgram(mV, microFlagCycles* mFC, int isEbit)
 
 	if (!isEbit) // Backup flag instances
 	{
-		xMOVAPS(xmmT1, ptr128[mVU.macFlag]);
-		xMOVAPS(ptr128[&mVU.regs().micro_macflags], xmmT1);
-		xMOVAPS(xmmT1, ptr128[mVU.clipFlag]);
-		xMOVAPS(ptr128[&mVU.regs().micro_clipflags], xmmT1);
+		if (!EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xMOVAPS(xmmT1, ptr128[mVU.macFlags()]);
+			xMOVAPS(ptr128[&mVU.regs().micro_macflags], xmmT1);
+			xMOVAPS(xmmT1, ptr128[mVU.clipFlags()]);
+			xMOVAPS(ptr128[&mVU.regs().micro_clipflags], xmmT1);
+		}
 
 		xMOV(ptr32[&mVU.regs().micro_statusflags[0]], gprF0);
 		xMOV(ptr32[&mVU.regs().micro_statusflags[1]], gprF1);
@@ -231,10 +234,13 @@ void mVUendProgram(mV, microFlagCycles* mFC, int isEbit)
 
 	if (!isEbit || isEbit == 3) // Backup flag instances
 	{
-		xMOVAPS(xmmT1, ptr128[mVU.macFlag]);
-		xMOVAPS(ptr128[&mVU.regs().micro_macflags], xmmT1);
-		xMOVAPS(xmmT1, ptr128[mVU.clipFlag]);
-		xMOVAPS(ptr128[&mVU.regs().micro_clipflags], xmmT1);
+		if (!EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xMOVAPS(xmmT1, ptr128[mVU.macFlags()]);
+			xMOVAPS(ptr128[&mVU.regs().micro_macflags], xmmT1);
+			xMOVAPS(xmmT1, ptr128[mVU.clipFlags()]);
+			xMOVAPS(ptr128[&mVU.regs().micro_clipflags], xmmT1);
+		}
 
 		xMOV(ptr32[&mVU.regs().micro_statusflags[0]], gprF0);
 		xMOV(ptr32[&mVU.regs().micro_statusflags[1]], gprF1);

@@ -354,9 +354,9 @@ __fi void mVUsetupFlags(mV, microFlagCycles& mFC)
 			DevCon.WriteLn("mVU%d - Mac Flag", mVU.index);
 		int bMac[4];
 		sortFlag(mFC.xMac, bMac, mFC.cycles);
-		xMOVAPS(xmmT1, ptr128[mVU.macFlag]);
+		xMOVAPS(xmmT1, ptr128[mVU.macFlags()]);
 		xSHUF.PS(xmmT1, xmmT1, shuffleMac);
-		xMOVAPS(ptr128[mVU.macFlag], xmmT1);
+		xMOVAPS(ptr128[mVU.macFlags()], xmmT1);
 	}
 
 	if (doCFlagInsts && __Clip)
@@ -365,9 +365,9 @@ __fi void mVUsetupFlags(mV, microFlagCycles& mFC)
 			DevCon.WriteLn("mVU%d - Clip Flag", mVU.index);
 		int bClip[4];
 		sortFlag(mFC.xClip, bClip, mFC.cycles);
-		xMOVAPS(xmmT2, ptr128[mVU.clipFlag]);
+		xMOVAPS(xmmT2, ptr128[mVU.clipFlags()]);
 		xSHUF.PS(xmmT2, xmmT2, shuffleClip);
-		xMOVAPS(ptr128[mVU.clipFlag], xmmT2);
+		xMOVAPS(ptr128[mVU.clipFlags()], xmmT2);
 	}
 }
 

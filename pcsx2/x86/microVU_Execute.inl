@@ -24,6 +24,8 @@ static bool mvuNeedsFPCRUpdate(mV)
 	return EmuConfig.Cpu.FPUFPCR.bitmask != (isVU0 ? EmuConfig.Cpu.VU0FPCR.bitmask : EmuConfig.Cpu.VU1FPCR.bitmask);
 }
 
+#include "microVU_Communication.inl"
+
 // Generates the code for entering/exit recompiled blocks
 void mVUdispatcherAB(mV)
 {
@@ -31,10 +33,41 @@ void mVUdispatcherAB(mV)
 
 	{
 		xScopedStackFrame frame(false, true);
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			// Both dispatcher bodies share this ABI frame. Only enter another
+			// body after complete register/pipeline export and cycle accounting.
+			g_mvuCommunicationBody[mVU.index] = xGetPtr();
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary(Jcc_Zero);
+			xMOV(arg1regd, ptr32[&g_mvuCommunicationRequest.pc]);
+			xMOV(arg2regd, ptr32[&g_mvuCommunicationRequest.runCycles]);
+			ordinary.SetTarget();
+		}
 
 		// = The caller has already put the needed parameters in ecx/edx:
-		if (!isVU1) xFastCall((void*)mVUexecuteVU0, arg1reg, arg2reg);
-		else        xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xMOV(rax, ptrNative[&g_mvuPreparedEntry[mVU.index]]);
+			xTEST(rax, rax);
+			xForwardJump32 unresolved(Jcc_Zero);
+			xMOV(ptrNative[&g_mvuPreparedEntry[mVU.index]], 0);
+			xMOV(ptr32[&mVU.cycles], arg2regd);
+			xMOV(ptr32[&mVU.totalCycles], arg2regd);
+			xMOV(r8, ptrNative[&mVU.prog.x86ptr]);
+			xMOV(ptrNative[&x86Ptr], r8);
+			xForwardJump32 resolved(Jcc_Unconditional);
+			unresolved.SetTarget();
+			if (!isVU1)
+				xFastCall((void*)mVUexecuteVU0, arg1reg, arg2reg);
+			else
+				xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
+			resolved.SetTarget();
+		}
+		else if (!isVU1)
+			xFastCall((void*)mVUexecuteVU0, arg1reg, arg2reg);
+		else
+			xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
 
 		// Soft-float keeps the PS2 truncate/DAZ/FTZ mode for the whole VU
 		// dispatch, avoiding serializing mode changes around each arithmetic op.
@@ -42,31 +75,50 @@ void mVUdispatcherAB(mV)
 			xLDMXCSR(ptr32[CHECK_VU_SOFT(mVU.index) ? &s_vu_soft_truncate_daz_ftz_mxcsr :
 				(isVU0 ? &EmuConfig.Cpu.VU0FPCR.bitmask : &EmuConfig.Cpu.VU1FPCR.bitmask)]);
 
-		// Load Regs
-		xMOVAPS (xmmT1, ptr128[&mVU.regs().VI[REG_P].UL]);
-		xMOVAPS (xmmPQ, ptr128[&mVU.regs().VI[REG_Q].UL]);
-		xMOVDZX (xmmT2, ptr32[&mVU.regs().pending_q]);
-		xSHUF.PS(xmmPQ, xmmT1, 0); // wzyx = PPQQ
-		//Load in other Q instance
-		xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
-		xMOVSS(xmmPQ, xmmT2);
-		xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
-
-		if (isVU1)
+		// Load the same active/future Q/P lanes without whole VI-vector loads.
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
 		{
-			//Load in other P instance
-			xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
-			xPSHUF.D(xmmPQ, xmmPQ, 0x1B);
+			xMOVDZX(xmmPQ, ptr32[&mVU.regs().VI[REG_Q].UL]);
+			xMOVDZX(xmmT1, ptr32[&mVU.regs().pending_q]);
+			xUNPCK.LPS(xmmPQ, xmmT1);
+			xMOVDZX(xmmT1, ptr32[&mVU.regs().VI[REG_P].UL]);
+			if (isVU1)
+			{
+				xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
+				xUNPCK.LPS(xmmT1, xmmT2);
+			}
+			else
+				xSHUF.PS(xmmT1, xmmT1, 0);
+			xMOVLH.PS(xmmPQ, xmmT1);
+		}
+		else
+		{
+			xMOVAPS(xmmT1, ptr128[&mVU.regs().VI[REG_P].UL]);
+			xMOVAPS(xmmPQ, ptr128[&mVU.regs().VI[REG_Q].UL]);
+			xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_q]);
+			xSHUF.PS(xmmPQ, xmmT1, 0); // wzyx = PPQQ
+			//Load in other Q instance
+			xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
 			xMOVSS(xmmPQ, xmmT2);
-			xPSHUF.D(xmmPQ, xmmPQ, 0x1B);
+			xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
+
+			if (isVU1)
+			{
+				//Load in other P instance
+				xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
+				xPSHUF.D(xmmPQ, xmmPQ, 0x1B);
+				xMOVSS(xmmPQ, xmmT2);
+				xPSHUF.D(xmmPQ, xmmPQ, 0x1B);
+			}
 		}
 
-		xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_macflags]);
-		xMOVAPS(ptr128[mVU.macFlag], xmmT1);
-
-
-		xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_clipflags]);
-		xMOVAPS(ptr128[mVU.clipFlag], xmmT1);
+		if (!EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_macflags]);
+			xMOVAPS(ptr128[mVU.macFlags()], xmmT1);
+			xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_clipflags]);
+			xMOVAPS(ptr128[mVU.clipFlags()], xmmT1);
+		}
 
 		xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
 		xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
@@ -84,8 +136,54 @@ void mVUdispatcherAB(mV)
 
 		// = The first two DWORD or smaller arguments are passed in ECX and EDX registers;
 		//              all other arguments are passed right to left.
-		if (!isVU1) xFastCall((void*)mVUcleanUpVU0);
-		else        xFastCall((void*)mVUcleanUpVU1);
+#ifndef mVUprofileProg
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xMOV(rax, ptrNative[&x86Ptr]);
+			xMOV(rdx, ptrNative[&mVU.prog.x86start]);
+			xCMP(rax, rdx);
+			xForwardJump32 beforeCache(Jcc_Below);
+			xMOV(rdx, ptrNative[&mVU.prog.x86end]);
+			xCMP(rax, rdx);
+			xForwardJump32 cacheFull(Jcc_AboveOrEqual);
+			xMOV(ptrNative[&mVU.prog.x86ptr], rax);
+			xMOV(edx, ptr32[&mVU.totalCycles]);
+			xSUB(edx, ptr32[&mVU.cycles]);
+			xMOV(ptr32[&mVU.cycles], edx);
+			xADD(ptr64[&mVU.regs().cycle], rdx);
+			xForwardJump32 cleaned(Jcc_Unconditional);
+			beforeCache.SetTarget();
+			cacheFull.SetTarget();
+			if (!isVU1)
+				xFastCall((void*)mVUcleanUpVU0);
+			else
+				xFastCall((void*)mVUcleanUpVU1);
+			cleaned.SetTarget();
+		}
+		else
+#endif
+		{
+			if (!isVU1)
+				xFastCall((void*)mVUcleanUpVU0);
+			else
+				xFastCall((void*)mVUcleanUpVU1);
+		}
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary(Jcc_Zero);
+			std::vector<xForwardJump32> finished;
+			mVUemitCommunicationReturn(mVU, finished);
+			mVUemitCommunicationDispatch(mVU);
+			xFastCall((void*)mVUcommunicationNext, mVU.index);
+			xTEST(rax, rax);
+			xForwardJump32 done(Jcc_Zero);
+			xJMP(rax);
+			done.SetTarget();
+			for (auto& jump : finished)
+				jump.SetTarget();
+			ordinary.SetTarget();
+		}
 	}
 
 	xRET();
@@ -362,7 +460,11 @@ _mVUt void mVUcleanUp()
 		mVUreset(mVU);
 	}
 
-	mVU.cycles = mVU.totalCycles - std::max(0, mVU.cycles);
+	// A batch may complete an indivisible pair with a stall/delay beyond the
+	// remaining request. Account every executed cycle, not just the budget.
+	mVU.cycles = EmuConfig.Gamefixes.VUCommunicationHack ?
+	                 static_cast<s32>(mVU.totalCycles) - mVU.cycles :
+	                 mVU.totalCycles - std::max(0, mVU.cycles);
 	mVU.regs().cycle += mVU.cycles;
 
 	if (!vuIndex || !THREAD_VU1)
