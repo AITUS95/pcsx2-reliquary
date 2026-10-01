@@ -8,7 +8,9 @@
 #include "GS.h"
 #include "Gif_Unit.h"
 
+#ifdef _M_X86
 extern bool mVUrunCommunication(u32 unit, u32 cycles);
+#endif
 
 BaseVUmicroCPU* CpuVU0 = nullptr;
 BaseVUmicroCPU* CpuVU1 = nullptr;
@@ -33,8 +35,10 @@ bool vuRunInterleaved(u32 unit, u32 cycles)
 		return false;
 
 	pxAssert(!THREAD_VU1);
+#ifdef _M_X86
 	if (mVUrunCommunication(unit, cycles))
 		return true;
+#endif
 	VURegs& requested = vuRegs[unit];
 	const u64 target = requested.cycle + cycles;
 	const u32 mask = unit ? 0x100 : 1;
