@@ -6,6 +6,12 @@
 
 void ATA::IDE_ExecCmd(u16 value)
 {
+	if (ioFailed.load())
+	{
+		HDD_SetIoError();
+		PostCmdNoData();
+		return;
+	}
 	switch (value)
 	{
 		case 0x00:

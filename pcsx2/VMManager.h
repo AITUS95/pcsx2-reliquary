@@ -94,6 +94,10 @@ namespace VMManager
 	/// Returns the current state of the VM.
 	VMState GetState();
 
+	// Reserves offline HDD work and prevents boot until it finishes.
+	bool BeginHddImageOperation(Error* error);
+	void EndHddImageOperation();
+
 	/// Alters the current state of the VM.
 	void SetState(VMState state);
 

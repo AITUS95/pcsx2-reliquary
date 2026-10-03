@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "common/Assertions.h"
+#include "common/Error.h"
 #include "common/FileSystem.h"
+#include "common/ScopedGuard.h"
 
 #include "ATA.h"
 #include "ChdHddImage.h"
+#include "VhdHddImage.h"
+#include "Host.h"
+#include "VMManager.h"
 #include "DEV9/DEV9.h"
 
 #if __POSIX__
@@ -57,9 +62,45 @@ void ATA::IO_Thread()
 	}
 }
 
+void ATA::IO_Fail(const Error& error)
+{
+	if (ioFailed.exchange(true))
+		return;
+	Console.Error("DEV9: ATA: VHD I/O stopped: %s", error.GetDescription().c_str());
+	Host::RunOnCPUThread([message = error.GetDescription(), session = ioSessionActive]() {
+		if (session->load() && VMManager::GetState() == VMState::Running)
+			VMManager::SetPaused(true);
+		Host::ReportErrorAsync("HDD I/O Error", fmt::format("VHD I/O has stopped. Pending writes may not have reached storage. Shut down emulation before reopening the image.\n\n{}", message));
+	});
+}
+
+void ATA::HDD_SetIoError()
+{
+	waitingCmd = nullptr;
+	awaitFlush = false;
+	dmaReady = false;
+	regStatus &= ~(ATA_STAT_BUSY | ATA_STAT_DRQ);
+	regStatus |= ATA_STAT_ERR;
+	regError |= ATA_ERR_ABORT;
+}
+
 void ATA::IO_Read()
 {
+	ScopedGuard complete_read([this]() {
+		std::lock_guard ioSignallock(ioMutex);
+		ioRead = false;
+	});
+	if (ioFailed.load())
+		return;
+
 	const s64 lba = HDD_GetLBA();
+	if (vhdHddImage)
+	{
+		Error error;
+		if (!vhdHddImage->ReadSectors(lba, nsector, readBuffer, &error))
+			IO_Fail(error);
+		return;
+	}
 
 	if (lba == -1)
 	{
@@ -68,7 +109,6 @@ void ATA::IO_Read()
 		abort();
 	}
 
-	const u64 pos = lba * 512;
 	if (chdHddImage)
 	{
 		if (!chdHddImage->ReadSectors(lba, nsector, readBuffer))
@@ -78,16 +118,12 @@ void ATA::IO_Read()
 			abort();
 		}
 	}
-	else if (FileSystem::FSeek64(hddImage, pos, SEEK_SET) != 0 ||
-		std::fread(readBuffer, 512, nsector, hddImage) != static_cast<size_t>(nsector))
+	else if (FileSystem::FSeek64(hddImage, lba * 512, SEEK_SET) != 0 ||
+			 std::fread(readBuffer, 512, nsector, hddImage) != static_cast<size_t>(nsector))
 	{
 		Console.Error("DEV9: ATA: File read error");
 		pxAssert(false);
 		abort();
-	}
-	{
-		std::lock_guard ioSignallock(ioMutex);
-		ioRead = false;
 	}
 }
 
@@ -96,9 +132,28 @@ bool ATA::IO_Write()
 	WriteQueueEntry entry;
 	if (!writeQueue.Dequeue(&entry))
 	{
+		if (vhdHddImage && !ioFailed.load())
+		{
+			Error error;
+			if (!vhdHddImage->Flush(&error))
+				IO_Fail(error);
+		}
 		std::lock_guard ioSignallock(ioMutex);
 		ioWrite = false;
 		return false;
+	}
+
+	const std::unique_ptr<u8[]> data(entry.data);
+
+	if (ioFailed.load())
+		return true;
+
+	if (vhdHddImage)
+	{
+		Error error;
+		if (!vhdHddImage->WriteSectors(entry.sector, entry.length / 512, entry.data, &error))
+			IO_Fail(error);
+		return true;
 	}
 
 	const u64 imagePos = entry.sector * 512;
@@ -111,7 +166,6 @@ bool ATA::IO_Write()
 			abort();
 		}
 
-		delete[] entry.data;
 		return true;
 	}
 
@@ -200,7 +254,6 @@ bool ATA::IO_Write()
 			abort();
 		}
 	}
-	delete[] entry.data;
 	return true;
 }
 
@@ -460,20 +513,19 @@ void ATA::HDD_ReadSync(void (ATA::*drqCMD)())
 	//wait until thread waiting
 	ioThreadIdle_cv.wait(ioWaitHandle, [&] { return ioThreadIdle_bool; });
 	ioWaitHandle.unlock();
+	ScopedGuard resume_writes([&]() {
+		if (!ioWritePaused)
+			return;
+		ioWaitHandle.lock();
+		ioWrite = true;
+		ioWaitHandle.unlock();
+		ioReady.notify_all();
+	});
 
 	nsectorLeft = 0;
 
 	if (!HDD_CanAssessOrSetError())
-	{
-		if (ioWritePaused)
-		{
-			ioWaitHandle.lock();
-			ioWrite = true;
-			ioWaitHandle.unlock();
-			ioReady.notify_all();
-		}
 		return;
-	}
 
 	nsectorLeft = nsector;
 	if (readBufferLen < nsector * 512)
@@ -484,20 +536,18 @@ void ATA::HDD_ReadSync(void (ATA::*drqCMD)())
 	}
 
 	IO_Read();
+	resume_writes.Run();
 
-	if (ioWritePaused)
-	{
-		ioWaitHandle.lock();
-		ioWrite = true;
-		ioWaitHandle.unlock();
-		ioReady.notify_all();
-	}
+	if (ioFailed.load())
+		return;
 
 	(this->*drqCMD)();
 }
 
 bool ATA::HDD_CanAssessOrSetError()
 {
+	if (ioFailed.load())
+		return false;
 	if (!HDD_CanAccess(&nsector))
 	{
 		//Read what we can

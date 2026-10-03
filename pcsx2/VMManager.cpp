@@ -162,6 +162,8 @@ static std::unique_ptr<INISettingsInterface> s_input_settings_interface;
 static bool s_log_block_system_console = false;
 static bool s_log_force_file_log = false;
 
+static std::mutex s_hdd_image_operation_mutex;
+static bool s_hdd_image_operation_active = false;
 static std::atomic<VMState> s_state{VMState::Shutdown};
 static bool s_cpu_implementation_changed = false;
 static Threading::ThreadHandle s_vm_thread_handle;
@@ -1477,13 +1479,40 @@ void VMManager::InitializeAsync(
 	done_callback(result, error);
 }
 
+bool VMManager::BeginHddImageOperation(Error* error)
+{
+	std::lock_guard lock(s_hdd_image_operation_mutex);
+	if (s_hdd_image_operation_active || GetState() != VMState::Shutdown)
+	{
+		Error::SetStringView(error, TRANSLATE_SV("VMManager", "Shut down emulation and wait for other HDD operations to finish before modifying an HDD image."));
+		return false;
+	}
+	s_hdd_image_operation_active = true;
+	return true;
+}
+
+void VMManager::EndHddImageOperation()
+{
+	std::lock_guard lock(s_hdd_image_operation_mutex);
+	s_hdd_image_operation_active = false;
+}
+
 VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* error)
 {
 	const Common::Timer init_timer;
-	if (s_state.load(std::memory_order_acquire) != VMState::Shutdown)
 	{
-		Error::SetString(error, TRANSLATE_STR("VMManager", "The virtual machine is already running."));
-		return VMBootResult::StartupFailure;
+		std::lock_guard lock(s_hdd_image_operation_mutex);
+		if (s_state.load(std::memory_order_acquire) != VMState::Shutdown)
+		{
+			Error::SetString(error, TRANSLATE_STR("VMManager", "The virtual machine is already running."));
+			return VMBootResult::StartupFailure;
+		}
+		if (s_hdd_image_operation_active)
+		{
+			Error::SetStringView(error, TRANSLATE_SV("VMManager", "Wait for the HDD image operation to finish before starting emulation."));
+			return VMBootResult::StartupFailure;
+		}
+		s_state.store(VMState::Initializing, std::memory_order_release);
 	}
 
 	ApplyPythonBootParameters(boot_params);
@@ -1493,7 +1522,6 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	// (or make it thread-local, but that seems silly.)
 	Host::CancelGameListRefresh();
 
-	s_state.store(VMState::Initializing, std::memory_order_release);
 	s_vm_thread_handle = Threading::ThreadHandle::GetForCallingThread();
 	Host::OnVMStarting();
 	VMManager::Internal::ResetVMHotkeyState();

@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
+#include "common/Error.h"
 #include "common/FileSystem.h"
+#include "VhdHddImage.h"
 
 #include <fmt/format.h>
 #include "HddCreate.h"
@@ -23,8 +25,31 @@
 void HddCreate::Start()
 {
 	Init();
-	WriteImage(filePath, neededSize, 1024);
+	if (VhdHddImage::IsVhdFileName(filePath))
+		WriteVhdImage();
+	else
+		WriteImage(filePath, neededSize, 1024);
 	Cleanup();
+}
+
+void HddCreate::WriteVhdImage()
+{
+	VhdHddImage image;
+	Error error;
+	const bool created = image.Create(filePath, neededSize, &error);
+	if (!created || !image.Close(&error))
+	{
+		if (created)
+			FileSystem::DeleteFilePath(filePath.c_str());
+		Console.Error("DEV9: VHD creation failed: %s", error.GetDescription().c_str());
+		errored.store(true);
+		SetError();
+		return;
+	}
+
+	SetFileProgress(neededSize);
+	if (WasCanceled())
+		FileSystem::DeleteFilePath(filePath.c_str());
 }
 
 void HddCreate::WriteImage(const std::string& hddPath, u64 fileBytes, u64 zeroSizeBytes)

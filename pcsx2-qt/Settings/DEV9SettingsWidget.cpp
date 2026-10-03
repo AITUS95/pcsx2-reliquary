@@ -1,25 +1,34 @@
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
-#include <QtWidgets/QMessageBox>
-#include <QtWidgets/QFileDialog>
-#include <algorithm>
-
-#include "common/FileSystem.h"
-#include "common/Path.h"
-#include "common/StringUtil.h"
-
-#include "pcsx2/Host.h"
-#include "pcsx2/INISettingsInterface.h"
-
-#include "ChdHddImage.h"
 #include "DEV9SettingsWidget.h"
+#include "ChdHddImage.h"
+#include "HddImageOperations.h"
+#include "VhdHddImage.h"
 #include "QtHost.h"
 #include "QtUtils.h"
 #include "SettingWidgetBinder.h"
 #include "SettingsWindow.h"
-
 #include "HddCreateQt.h"
+
+#include "common/Error.h"
+#include "common/FileSystem.h"
+#include "common/Path.h"
+#include "common/ScopedGuard.h"
+#include "common/StringUtil.h"
+
+#include "pcsx2/Host.h"
+#include "pcsx2/INISettingsInterface.h"
+#include "pcsx2/VMManager.h"
+
+#include <QtCore/QEventLoop>
+#include <QtCore/QTimer>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QProgressDialog>
+#include <algorithm>
+#include <atomic>
+#include <thread>
 
 #include "DEV9/pcap_io.h"
 #ifdef _WIN32
@@ -191,6 +200,9 @@ DEV9SettingsWidget::DEV9SettingsWidget(SettingsWindow* settings_dialog, QWidget*
 	SettingWidgetBinder::SettingAccessor<QSpinBox>::connectValueChanged(m_ui.hddSizeSpinBox, [&]() { onHddSizeAccessorSpin(); });
 
 	connect(m_ui.hddCreate, &QPushButton::clicked, this, &DEV9SettingsWidget::onHddCreateClicked);
+	connect(m_ui.hddToVhd, &QPushButton::clicked, this, [this]() { RunHddOperation(HddOperation::ConvertToVhd); });
+	connect(m_ui.hddToRaw, &QPushButton::clicked, this, [this]() { RunHddOperation(HddOperation::ConvertToRaw); });
+	connect(m_ui.hddCompact, &QPushButton::clicked, this, [this]() { RunHddOperation(HddOperation::Compact); });
 
 	dialog()->registerWidgetHelp(m_ui.ethEnabled, tr("Enable Network Adapter"), tr("Unchecked"),
 		tr("Enables the network adapter for online functionality and LAN play."));
@@ -221,7 +233,11 @@ DEV9SettingsWidget::DEV9SettingsWidget(SettingsWindow* settings_dialog, QWidget*
 	dialog()->registerWidgetHelp(m_ui.hddEnabled, tr("Enable HDD"), tr("Unchecked"),
 		tr("Enables the internal Hard Disk Drive for expanded storage."));
 	dialog()->registerWidgetHelp(m_ui.hddFile, tr("HDD Image File"), tr("DEV9hdd.raw"),
-		tr("Path to the raw virtual hard disk image file on disk."));
+		tr("Path to a raw, CHD, or VHD virtual hard disk image file."));
+	dialog()->registerWidgetHelp(m_ui.hddFormat, tr("New Image Format"), tr("Raw"),
+		tr("Dynamic VHD images start small and grow as data is written. Raw images use sparse storage when the filesystem supports it."));
+	dialog()->registerWidgetHelp(m_ui.hddCompact, tr("Compact VHD"), tr("N/A"),
+		tr("Rebuilds and verifies the VHD to reclaim zero-filled blocks. Deleting a PS2 file does not necessarily zero its sectors. Requires emulation to be shut down."));
 	dialog()->registerWidgetHelp(m_ui.hddLBA48, tr("Enable 48-Bit LBA"), tr("Unchecked"),
 		tr("Enables 48-bit Logical Block Addressing support for virtual hard drives larger than 128 GB."));
 	dialog()->registerWidgetHelp(m_ui.hddSizeSlider, tr("HDD Size"), tr("40 GB"),
@@ -646,7 +662,7 @@ void DEV9SettingsWidget::onHddBrowseFileClicked()
 	QString path =
 		QDir::toNativeSeparators(QFileDialog::getSaveFileName(QtUtils::GetRootWidget(this), tr("HDD Image File"),
 			!m_ui.hddFile->text().isEmpty() ? m_ui.hddFile->text() : (!m_ui.hddFile->placeholderText().isEmpty() ? m_ui.hddFile->placeholderText() : "DEV9hdd.raw"),
-			tr("HDD (*.raw *.chd)"), nullptr, QFileDialog::DontConfirmOverwrite));
+			tr("HDD (*.raw *.chd *.vhd)"), nullptr, QFileDialog::DontConfirmOverwrite));
 
 	if (path.isEmpty())
 		return;
@@ -705,10 +721,17 @@ void DEV9SettingsWidget::onHddLBA48Changed(Qt::CheckState state)
 
 void DEV9SettingsWidget::onHddCreateClicked()
 {
-	//Do the thing
-	std::string hddPath(m_ui.hddFile->text().toStdString());
+	Error error;
+	if (!VMManager::BeginHddImageOperation(&error))
+	{
+		QMessageBox::warning(this, tr("HDD Creator"), QString::fromStdString(error.GetDescription()));
+		return;
+	}
+	ScopedGuard operation_guard([]() { VMManager::EndHddImageOperation(); });
+	const bool dynamicVhd = m_ui.hddFormat->currentIndex() == 1;
+	std::string hddPath = GetHddPath();
 
-	const u64 sizeBytes = (u64)m_ui.hddSizeSpinBox->value() * (u64)(1024 * 1024 * 1024);
+	const u64 sizeBytes = static_cast<u64>(m_ui.hddSizeSpinBox->value()) * (1024 * 1024 * 1024);
 
 	if (sizeBytes == 0 || hddPath.empty())
 	{
@@ -718,8 +741,10 @@ void DEV9SettingsWidget::onHddCreateClicked()
 		return;
 	}
 
-	if (!Path::IsAbsolute(hddPath))
-		hddPath = Path::Combine(EmuFolders::Settings, hddPath);
+	if (dynamicVhd)
+		hddPath = Path::ReplaceExtension(hddPath, "vhd");
+	else if (VhdHddImage::IsVhdFileName(hddPath) || ChdHddImage::IsChdFileName(hddPath))
+		hddPath = Path::ReplaceExtension(hddPath, "raw");
 
 	if (FileSystem::FileExists(hddPath.c_str()))
 	{
@@ -729,23 +754,120 @@ void DEV9SettingsWidget::onHddCreateClicked()
 				   "Do you want to overwrite?")
 					.arg(QString::fromStdString(hddPath)),
 				QMessageBox::Yes | QMessageBox::No);
-		if (selection == QMessageBox::No)
+		if (selection != QMessageBox::Yes)
 			return;
-		else
-			FileSystem::DeleteFilePath(hddPath.c_str());
+		if (!FileSystem::DeleteFilePath(hddPath.c_str()))
+		{
+			QMessageBox::warning(this, tr("HDD Creator"), tr("Failed to delete the existing HDD image."));
+			return;
+		}
 	}
 
 	HddCreateQt hddCreator(this);
-	hddCreator.filePath = std::move(hddPath);
+	hddCreator.filePath = hddPath;
 	hddCreator.neededSize = sizeBytes;
 	hddCreator.Start();
 
-	if (!hddCreator.errored)
+	if (!hddCreator.errored && !hddCreator.WasCanceled())
 	{
+		m_ui.hddFile->setText(QString::fromStdString(hddPath));
+		onHddFileEdit();
 		QMessageBox::information(this, tr("HDD Creator"),
 			tr("HDD image created"),
 			QMessageBox::StandardButton::Ok, QMessageBox::StandardButton::Ok);
 	}
+}
+
+void DEV9SettingsWidget::RunHddOperation(HddOperation operation)
+{
+	const bool compact = operation == HddOperation::Compact;
+	Error error;
+	if (!VMManager::BeginHddImageOperation(&error))
+	{
+		QMessageBox::warning(this, tr("HDD Tools"), QString::fromStdString(error.GetDescription()));
+		return;
+	}
+	ScopedGuard operation_guard([]() { VMManager::EndHddImageOperation(); });
+	const std::string source = GetHddPath();
+	std::string destination;
+	if (compact)
+	{
+		if (QMessageBox::question(this, tr("Compact VHD"),
+				tr("Rebuild this VHD and verify every logical sector before replacing it? Only zero-filled blocks can be reclaimed. This can take a long time.")) != QMessageBox::Yes)
+			return;
+	}
+	else
+	{
+		const bool toVhd = operation == HddOperation::ConvertToVhd;
+		const QString path = QFileDialog::getSaveFileName(this, tr("Converted HDD Image"),
+			QString::fromStdString(Path::ReplaceExtension(source, toVhd ? "vhd" : "raw")),
+			toVhd ? tr("Dynamic VHD (*.vhd)") : tr("Raw HDD (*.raw)"), nullptr, QFileDialog::DontConfirmOverwrite);
+		if (path.isEmpty())
+			return;
+		destination = Path::ReplaceExtension(path.toStdString(), toVhd ? "vhd" : "raw");
+	}
+
+	const std::string identity = dialog()->getEffectiveStringValue("DEV9/Hdd", "HddIdFile", "DEV9hdd.hddid");
+	if (!RunHddOperationWithProgress(operation, source, destination, identity, &error))
+	{
+		QMessageBox::warning(this, tr("HDD Tools"), QString::fromStdString(error.GetDescription()));
+		return;
+	}
+	if (!compact)
+	{
+		m_ui.hddFile->setText(QString::fromStdString(destination));
+		onHddFileEdit();
+		dialog()->setStringSettingValue("DEV9/Hdd", "HddIdFile", Path::ReplaceExtension(destination, "hddid").c_str());
+	}
+	QMessageBox::information(this, tr("HDD Tools"), tr("HDD operation completed and verified."));
+}
+
+bool DEV9SettingsWidget::RunHddOperationWithProgress(HddOperation operation, const std::string& source,
+	const std::string& destination, const std::string& identity, Error* error)
+{
+	QProgressDialog progress(tr("Copying and verifying HDD contents..."), tr("Cancel"), 0, 1000, this);
+	progress.setWindowTitle(tr("HDD Tools"));
+	progress.setWindowModality(Qt::ApplicationModal);
+	progress.setAutoClose(false);
+	progress.setAutoReset(false);
+	progress.setMinimumDuration(0);
+	std::atomic_bool canceled{false};
+	std::atomic_int completed{0};
+	bool result = false;
+	QEventLoop loop;
+	connect(&progress, &QProgressDialog::canceled, &loop, [&]() {
+		canceled.store(true);
+		progress.setLabelText(tr("Canceling HDD operation..."));
+		progress.setCancelButton(nullptr);
+		QTimer::singleShot(0, &progress, [&]() { progress.show(); });
+	});
+	QTimer timer;
+	connect(&timer, &QTimer::timeout, &loop, [&]() { progress.setValue(completed.load()); });
+	timer.start(100);
+	std::thread worker([&]() {
+		const auto update = [&](u64 done, u64 total) {
+			completed.store(total ? static_cast<int>(done * 1000 / total) : 0);
+			return !canceled.load();
+		};
+		if (operation == HddOperation::Compact)
+			result = HddImageOperations::Compact(source, update, error);
+		else
+			result = HddImageOperations::Convert(source, destination, operation == HddOperation::ConvertToVhd, identity, update, error);
+		QMetaObject::invokeMethod(&loop, &QEventLoop::quit, Qt::QueuedConnection);
+	});
+	progress.show();
+	loop.exec();
+	worker.join();
+	progress.close();
+	return result;
+}
+
+std::string DEV9SettingsWidget::GetHddPath() const
+{
+	std::string hddPath = m_ui.hddFile->text().toStdString();
+	if (hddPath.empty())
+		hddPath = m_ui.hddFile->placeholderText().toStdString();
+	return hddPath.empty() || Path::IsAbsolute(hddPath) ? hddPath : Path::Combine(EmuFolders::Settings, hddPath);
 }
 
 void DEV9SettingsWidget::UpdateHddSizeUIEnabled()
@@ -758,6 +880,11 @@ void DEV9SettingsWidget::UpdateHddSizeUIEnabled()
 	else
 		enableSizeUI = m_ui.hddFile->isEnabled();
 
+	m_ui.hddFormat->setEnabled(enableSizeUI);
+	m_ui.hddFormatLabel->setEnabled(enableSizeUI);
+	m_ui.hddToVhd->setEnabled(enableSizeUI);
+	m_ui.hddToRaw->setEnabled(enableSizeUI);
+	m_ui.hddCompact->setEnabled(enableSizeUI);
 	m_ui.hddLBA48->setEnabled(enableSizeUI);
 	m_ui.hddSizeLabel->setEnabled(enableSizeUI);
 	m_ui.hddSizeSlider->setEnabled(enableSizeUI);
@@ -768,13 +895,7 @@ void DEV9SettingsWidget::UpdateHddSizeUIEnabled()
 
 void DEV9SettingsWidget::UpdateHddSizeUIValues()
 {
-	std::string hddPath(m_ui.hddFile->text().toStdString());
-
-	if (dialog()->isPerGameSettings() && hddPath.empty())
-		hddPath = m_ui.hddFile->placeholderText().toStdString();
-
-	if (!Path::IsAbsolute(hddPath))
-		hddPath = Path::Combine(EmuFolders::Settings, hddPath);
+	const std::string hddPath = GetHddPath();
 
 	if (!FileSystem::FileExists(hddPath.c_str()))
 		return;

@@ -464,6 +464,12 @@
     <ClCompile Include="ChdHddImage.cpp">
       <Filter>Misc</Filter>
     </ClCompile>
+    <ClCompile Include="VhdHddImage.cpp">
+      <Filter>Misc</Filter>
+    </ClCompile>
+    <ClCompile Include="HddImageOperations.cpp">
+      <Filter>Misc</Filter>
+    </ClCompile>
     <ClCompile Include="Memory.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
@@ -1521,6 +1527,12 @@
       <Filter>System\Include</Filter>
     </ClInclude>
     <ClInclude Include="ChdHddImage.h">
+      <Filter>System\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="VhdHddImage.h">
+      <Filter>System\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="HddImageOperations.h">
       <Filter>System\Include</Filter>
     </ClInclude>
     <ClInclude Include="Config.h">

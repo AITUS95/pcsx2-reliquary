@@ -46,7 +46,6 @@ namespace FullscreenUI
 	void InvalidateCoverCache();
 	TinyString TimeToPrintableString(time_t t);
 	
-	bool CreateHardDriveWithProgress(const std::string& filePath, int sizeInGB, bool use48BitLBA = true);
 	void CancelAllHddOperations();
 } // namespace FullscreenUI
 

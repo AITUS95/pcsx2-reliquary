@@ -13,6 +13,8 @@
 
 #include <QtGui/QStandardItemModel>
 
+class Error;
+
 class DEV9SettingsWidget : public SettingsWidget
 {
 	Q_OBJECT
@@ -61,6 +63,17 @@ private:
 
 	void UpdateHddSizeUIEnabled();
 	void UpdateHddSizeUIValues();
+	std::string GetHddPath() const;
+
+	enum class HddOperation
+	{
+		ConvertToVhd,
+		ConvertToRaw,
+		Compact
+	};
+	void RunHddOperation(HddOperation operation);
+	bool RunHddOperationWithProgress(HddOperation operation, const std::string& source,
+		const std::string& destination, const std::string& identity, Error* error);
 
 	Ui::DEV9SettingsWidget m_ui;
 

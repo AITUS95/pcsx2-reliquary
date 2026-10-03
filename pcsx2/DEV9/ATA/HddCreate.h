@@ -23,19 +23,21 @@ private:
 	std::chrono::steady_clock::time_point lastUpdate;
 
 public:
-	HddCreate(){};
+	HddCreate() {};
 
 	void Start();
+	bool WasCanceled() const { return canceled.load(); }
 
-	virtual ~HddCreate(){};
+	virtual ~HddCreate() {};
 
 protected:
-	virtual void Init(){};
-	virtual void Cleanup(){};
+	virtual void Init() {};
+	virtual void Cleanup() {};
 	virtual void SetFileProgress(u64 currentSize);
 	virtual void SetError();
 	void SetCanceled();
 
 private:
+	void WriteVhdImage();
 	void WriteImage(const std::string& hddPath, u64 fileBytes, u64 zeroSizeBytes);
 };
