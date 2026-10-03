@@ -29,6 +29,17 @@ static bool mvuNeedsFPCRUpdate(mV)
 // Generates the code for entering/exit recompiled blocks
 void mVUdispatcherAB(mV)
 {
+	const bool shared_soft_mode = EmuConfig.Gamefixes.VUCommunicationHack && CHECK_VU_SOFT(0) && CHECK_VU_SOFT(1);
+	const auto restore_host_mode = [&] { if (shared_soft_mode) xLDMXCSR(ptr32[&EmuConfig.Cpu.FPUFPCR.bitmask]); };
+	const auto restore_native_mode = [&] {
+		if (shared_soft_mode)
+		{
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary(Jcc_Zero);
+			xLDMXCSR(ptr32[&s_vu_soft_truncate_daz_ftz_mxcsr]);
+			ordinary.SetTarget();
+		}
+	};
 	mVU.startFunct = xGetAlignedCallTarget();
 
 	{
@@ -69,11 +80,18 @@ void mVUdispatcherAB(mV)
 		else
 			xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
 
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
 		// Soft-float keeps the PS2 truncate/DAZ/FTZ mode for the whole VU
 		// dispatch, avoiding serializing mode changes around each arithmetic op.
 		if (mvuNeedsFPCRUpdate(mVU))
 			xLDMXCSR(ptr32[CHECK_VU_SOFT(mVU.index) ? &s_vu_soft_truncate_daz_ftz_mxcsr :
 				(isVU0 ? &EmuConfig.Cpu.VU0FPCR.bitmask : &EmuConfig.Cpu.VU1FPCR.bitmask)]);
+
+		// A native transition between two soft-float VUs keeps the identical
+		// execution mode. Every host callback and the EE return restore EE mode.
+		if (shared_soft_mode)
+			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
 
 		// Load the same active/future Q/P lanes without whole VI-vector loads.
 		if (EmuConfig.Gamefixes.VUCommunicationHack)
@@ -132,7 +150,17 @@ void mVUdispatcherAB(mV)
 
 		// Load EE's MXCSR state
 		if (mvuNeedsFPCRUpdate(mVU))
-			xLDMXCSR(ptr32[&EmuConfig.Cpu.FPUFPCR.bitmask]);
+		{
+			if (shared_soft_mode)
+			{
+				xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+				xForwardJump32 native(Jcc_NotZero);
+				xLDMXCSR(ptr32[&EmuConfig.Cpu.FPUFPCR.bitmask]);
+				native.SetTarget();
+			}
+			else
+				xLDMXCSR(ptr32[&EmuConfig.Cpu.FPUFPCR.bitmask]);
+		}
 
 		// = The first two DWORD or smaller arguments are passed in ECX and EDX registers;
 		//              all other arguments are passed right to left.
@@ -154,27 +182,31 @@ void mVUdispatcherAB(mV)
 			xForwardJump32 cleaned(Jcc_Unconditional);
 			beforeCache.SetTarget();
 			cacheFull.SetTarget();
+			restore_host_mode();
 			if (!isVU1)
 				xFastCall((void*)mVUcleanUpVU0);
 			else
 				xFastCall((void*)mVUcleanUpVU1);
+			restore_native_mode();
 			cleaned.SetTarget();
 		}
 		else
 #endif
 		{
+			restore_host_mode();
 			if (!isVU1)
 				xFastCall((void*)mVUcleanUpVU0);
 			else
 				xFastCall((void*)mVUcleanUpVU1);
+			restore_native_mode();
 		}
 		if (EmuConfig.Gamefixes.VUCommunicationHack)
 		{
 			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
 			xForwardJump32 ordinary(Jcc_Zero);
 			std::vector<xForwardJump32> finished;
-			mVUemitCommunicationReturn(mVU, finished);
-			mVUemitCommunicationDispatch(mVU);
+			mVUemitCommunicationDispatch(mVU, finished);
+			restore_host_mode();
 			xFastCall((void*)mVUcommunicationNext, mVU.index);
 			xTEST(rax, rax);
 			xForwardJump32 done(Jcc_Zero);
@@ -182,6 +214,13 @@ void mVUdispatcherAB(mV)
 			done.SetTarget();
 			for (auto& jump : finished)
 				jump.SetTarget();
+			ordinary.SetTarget();
+		}
+		if (shared_soft_mode)
+		{
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary(Jcc_Zero);
+			restore_host_mode();
 			ordinary.SetTarget();
 		}
 	}
@@ -460,7 +499,7 @@ _mVUt void mVUcleanUp()
 		mVUreset(mVU);
 	}
 
-	// A batch may complete an indivisible pair with a stall/delay beyond the
+	// An indivisible pair with a stall/delay may complete beyond the
 	// remaining request. Account every executed cycle, not just the budget.
 	mVU.cycles = EmuConfig.Gamefixes.VUCommunicationHack ?
 	                 static_cast<s32>(mVU.totalCycles) - mVU.cycles :

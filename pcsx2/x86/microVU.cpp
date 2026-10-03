@@ -13,6 +13,7 @@ void* g_mvuPreparedEntry[2] = {};
 MvuCommunicationRequest g_mvuCommunicationRequest;
 MvuCommunicationHint g_mvuCommunicationHint[2];
 void* g_mvuCommunicationBody[2] = {};
+void* g_mvuCommunicationHotBody[2] = {};
 
 const u8* mVUstatusTable()
 {
@@ -468,8 +469,7 @@ static void* mVUprepareCommunication()
 	r.unit = unit;
 	r.pc = pc;
 	r.before = vu.cycle;
-	r.runCycles = VUCommunication::BatchCycles(unit, block->cycles, vu.cycle, r.target,
-		stat & (unit ? 1 : 0x100), vuRegs[unit ^ 1].cycle);
+	r.runCycles = block->cycles;
 	g_mvuPreparedEntry[unit] = code;
 	if (!unit)
 		VU0.flags &= ~VUFLAG_MFLAGSET;

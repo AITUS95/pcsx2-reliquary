@@ -448,75 +448,9 @@ void mVUdebugPrintBlocks(microVU& mVU, bool isEndPC)
 }
 
 // Test cycles to see if we need to exit-early...
-static auto mVULowerFunction(u32 lower)
-{
-	auto fn = mVULOWER_OPCODE[lower >> 25];
-	if (fn == mVULowerOP)
-		fn = mVULowerOP_OPCODE[lower & 63];
-	if (fn == mVULowerOP_T3_00)
-		fn = mVULowerOP_T3_00_OPCODE[(lower >> 6) & 31];
-	else if (fn == mVULowerOP_T3_01)
-		fn = mVULowerOP_T3_01_OPCODE[(lower >> 6) & 31];
-	else if (fn == mVULowerOP_T3_10)
-		fn = mVULowerOP_T3_10_OPCODE[(lower >> 6) & 31];
-	else if (fn == mVULowerOP_T3_11)
-		fn = mVULowerOP_T3_11_OPCODE[(lower >> 6) & 31];
-	return fn;
-}
 void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 {
 	iPC = mVUstartPC;
-	std::vector<xForwardJump32> communicationExit;
-	if (isVU0 && EmuConfig.Gamefixes.VUCommunicationHack)
-	{
-		// Identical to an exhausted-budget entry: prior pair completed, next
-		// upper not sampled. M-bit must return to the EE even with budget left.
-		xTEST(ptr32[&VU0.flags], VUFLAG_MFLAGSET);
-		communicationExit.emplace_back(Jcc_NotZero);
-		const u32* words = reinterpret_cast<const u32*>(mVU.regs().Micro) + mVUstartPC;
-		const auto fn = mVULowerFunction(words[0]);
-		const bool memory = fn == mVU_LQ || fn == mVU_LQD || fn == mVU_LQI ||
-		                    fn == mVU_SQ || fn == mVU_SQD || fn == mVU_SQI || fn == mVU_ILW ||
-		                    fn == mVU_ILWR || fn == mVU_ISW || fn == mVU_ISWR;
-		const bool control = mVUcount != 1 || (words[1] & 0x78000000u);
-		const bool lowerEnabled = !(words[1] & 0x80000000u);
-		const bool barrier = control || (lowerEnabled && (memory || fn == mVUunknown ||
-															 fn == mVU_XGKICK || fn == mVU_XTOP || fn == mVU_XITOP));
-		if (barrier)
-		{
-			// Before any upper/lower effect, return if the partner must run
-			// before this communication/control pair. Private pairs can commute.
-			xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 0x100);
-			xForwardJump32 inactive(Jcc_Zero);
-			std::vector<xForwardJump32> local;
-			if (!control && memory && !EmuConfig.Gamefixes.IbitHack)
-			{
-				// Canonical link flushed VI before admission; do not apply the
-				// lower's inc/dec here. Only classify its effective address.
-				// Bit 0x400 selects the mapped VU1 register window in mVUaddrFix.
-				const bool store = fn == mVU_SQ || fn == mVU_SQD || fn == mVU_SQI;
-				const u32 vi = (words[0] >> (store ? 16 : 11)) & 15;
-				if (vi)
-					xMOVZX(eax, ptr16[&VU0.VI[vi].US[0]]);
-				else
-					xXOR(eax, eax);
-				if (fn == mVU_LQD || fn == mVU_SQD)
-					xDEC(eax);
-				else if (fn == mVU_LQ || fn == mVU_SQ || fn == mVU_ILW || fn == mVU_ISW)
-					xADD(eax, static_cast<s32>(words[0] << 21) >> 21);
-				xTEST(eax, 0x400);
-				local.emplace_back(Jcc_Zero);
-			}
-			xMOV(eax, ptr32[&mVU.totalCycles]);
-			xSUB(eax, ptr32[&mVU.cycles]);
-			xADD(rax, ptr64[&VU0.cycle]);
-			xCMP(rax, ptr64[&VU1.cycle]);
-			communicationExit.emplace_back(Jcc_Above); // VU0 still wins equality.
-			for (auto& jump : local)
-				jump.SetTarget();
-			inactive.SetTarget();
-		}
-	}
 
 	// If the VUSyncHack is on, we want the VU to run behind, to avoid conditions where the VU is sped up.
 	if (isVU0 && EmuConfig.Speedhacks.EECycleRate != 0 && (!EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Speedhacks.EECycleRate < 0))
@@ -552,8 +486,6 @@ void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 		xSUB(eax, 1); // Running ahead, make sure cycles left are above 0
 
 	xForwardJNS32 skip;
-	for (auto& jump : communicationExit)
-		jump.SetTarget();
 
 	xLoadFarAddr(rax, &mVUpBlock->pState);
 	xCALL((void*)mVU.copyPLState);

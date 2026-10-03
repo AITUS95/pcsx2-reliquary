@@ -51,14 +51,3 @@ TEST(VUCommunication, StatusLookupMatchesPackedConversion)
 		ASSERT_EQ(VUCommunication::NormalizeStatusLow(static_cast<u16>(raw)), rotated) << raw;
 	}
 }
-
-TEST(VUCommunication, BatchStopsAtRequestAndPartner)
-{
-	EXPECT_EQ(VUCommunication::BatchCycles(0, 1, 100, 120, true, 105), 20u);
-	EXPECT_EQ(VUCommunication::BatchCycles(1, 1, 100, 120, true, 105), 5u);
-	EXPECT_EQ(VUCommunication::BatchCycles(1, 1, 100, 120, false, 0), 20u);
-	EXPECT_EQ(VUCommunication::BatchCycles(0, 1, 100, 200, false, 0), 64u);
-	// Stalls and control/delay groups are indivisible, not truncated pairs.
-	EXPECT_EQ(VUCommunication::BatchCycles(1, 7, 100, 120, true, 102), 7u);
-	EXPECT_EQ(VUCommunication::BatchCycles(0, 7, 100, 101, false, 0), 7u);
-}

@@ -353,6 +353,7 @@ struct MvuCommunicationHint
 extern MvuCommunicationRequest g_mvuCommunicationRequest;
 extern MvuCommunicationHint g_mvuCommunicationHint[2];
 extern void* g_mvuCommunicationBody[2];
+extern void* g_mvuCommunicationHotBody[2];
 bool mVUrunCommunication(u32 unit, u32 cycles);
 void* mVUcommunicationNext(u32 unit);
 extern void* mVUexecuteVU0(u32 startPC, u32 cycles);

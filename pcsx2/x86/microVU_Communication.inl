@@ -2,48 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 // Complete-pair dispatch with canonical pipeline exports at every boundary.
-static void mVUemitCommunicationReturn(microVU& mVU, std::vector<xForwardJump32>& finished)
-{
-	auto& r = g_mvuCommunicationRequest;
-	auto& vu = mVU.regs();
-	std::vector<xForwardJump32> slow;
-	const auto fail = [&slow](JccComparisonType cc) { slow.emplace_back(cc); };
-	xCMP(ptr32[&r.active], 0);
-	fail(Jcc_Zero);
-	xTEST(ptr32[&vu.flags], VUFLAG_INTCINTERRUPT);
-	fail(Jcc_NotZero);
-	xMOV(rax, ptr64[&vu.cycle]);
-	xCMP(rax, ptr64[&r.before]);
-	fail(Jcc_BelowOrEqual);
-
-	xCMP(ptr32[&r.requestor], 0);
-	xForwardJump32 request1(Jcc_NotEqual);
-	xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 1);
-	xForwardJump32 inactive0(Jcc_Zero);
-	xTEST(ptr32[&VU0.flags], VUFLAG_MFLAGSET);
-	xForwardJump32 mflag(Jcc_NotZero);
-	xMOV(rax, ptr64[&VU0.cycle]);
-	xCMP(rax, ptr64[&r.target]);
-	fail(Jcc_Below);
-	xForwardJump32 completed0(Jcc_Unconditional);
-	request1.SetTarget();
-	xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 0x100);
-	xForwardJump32 inactive1(Jcc_Zero);
-	xMOV(rax, ptr64[&VU1.cycle]);
-	xCMP(rax, ptr64[&r.target]);
-	fail(Jcc_Below);
-	inactive0.SetTarget();
-	mflag.SetTarget();
-	completed0.SetTarget();
-	inactive1.SetTarget();
-	// Guest registers, pipeline and cycles are already exported. Pending IRQs
-	// take the ordinary C++ path before the EE caller can resume.
-	xSHR(ptr32[&vu.VI[REG_TPC].UL], 3);
-	finished.emplace_back(Jcc_Unconditional);
-	for (auto& jump : slow)
-		jump.SetTarget();
-}
-static void mVUemitCommunicationDispatch(microVU& mVU)
+static void mVUemitCommunicationDispatch(microVU& mVU, std::vector<xForwardJump32>& finished)
 {
 	// Translate only host dispatch bookkeeping. Guest instructions, complete
 	// boundaries, costs and earlier-unit/tie ordering stay unchanged. Hints are
@@ -51,6 +10,7 @@ static void mVUemitCommunicationDispatch(microVU& mVU)
 	auto& r = g_mvuCommunicationRequest;
 	auto& vu = mVU.regs();
 	std::vector<xForwardJump32> slow;
+	std::vector<xForwardJump32> completed;
 	const auto fail = [&slow](JccComparisonType cc) { slow.emplace_back(cc); };
 	xCMP(ptr32[&r.active], 0);
 	fail(Jcc_Zero);
@@ -63,19 +23,19 @@ static void mVUemitCommunicationDispatch(microVU& mVU)
 	xCMP(ptr32[&r.requestor], 0);
 	xForwardJump32 request1(Jcc_NotEqual);
 	xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 1);
-	fail(Jcc_Zero);
+	completed.emplace_back(Jcc_Zero);
 	xTEST(ptr32[&VU0.flags], VUFLAG_MFLAGSET);
-	fail(Jcc_NotZero);
+	completed.emplace_back(Jcc_NotZero);
 	xMOV(rax, ptr64[&VU0.cycle]);
 	xCMP(rax, ptr64[&r.target]);
-	fail(Jcc_AboveOrEqual);
+	completed.emplace_back(Jcc_AboveOrEqual);
 	xForwardJump32 checked(Jcc_Unconditional);
 	request1.SetTarget();
 	xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 0x100);
-	fail(Jcc_Zero);
+	completed.emplace_back(Jcc_Zero);
 	xMOV(rax, ptr64[&VU1.cycle]);
 	xCMP(rax, ptr64[&r.target]);
-	fail(Jcc_AboveOrEqual);
+	completed.emplace_back(Jcc_AboveOrEqual);
 	checked.SetTarget();
 	xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 1);
 	xForwardJump32 select1Inactive0(Jcc_Zero);
@@ -121,41 +81,26 @@ static void mVUemitCommunicationDispatch(microVU& mVU)
 			xAND(ptr32[&VU0.flags], ~VUFLAG_MFLAGSET);
 		xMOV(rax, ptrNative[rax + offsetof(microBlock, x86ptrStart)]);
 
-		// Re-enter the normal body for both units. Guest flags/PQ always reloaded;
-		// only the outer ABI prologue and C++ plan search are amortized.
-		xMOV(r9, ptr64[&r.target]);
-		xSUB(r9, r8);
-		xCMP(r9, 64);
-		xForwardJump32 underCap(Jcc_BelowOrEqual);
-		xMOV(r9d, 64);
-		underCap.SetTarget();
-		if (next.index)
-		{
-			xTEST(ptr32[&VU0.VI[REG_VPU_STAT].UL], 1);
-			xForwardJump32 alone(Jcc_Zero);
-			xMOV(r10, ptr64[&VU0.cycle]);
-			xSUB(r10, r8);
-			xCMP(r9, r10);
-			xForwardJump32 notBehind(Jcc_BelowOrEqual);
-			xMOV(r9, r10);
-			notBehind.SetTarget();
-			alone.SetTarget();
-		}
-		xCMP(r9d, ecx);
-		xForwardJump32 atLeastCost(Jcc_AboveOrEqual);
-		xMOV(r9d, ecx);
-		atLeastCost.SetTarget();
-		xMOV(ptr32[&r.runCycles], r9d);
-		xMOV(ptrNative[&g_mvuPreparedEntry[next.index]], rax);
+		// Entry and cycle counters are already resolved. Reload canonical guest
+		// flags/PQ through the same body without repeating argument/lookup work.
+		xMOV(ptr32[&r.runCycles], ecx);
+		xMOV(ptr32[&next.cycles], ecx);
+		xMOV(ptr32[&next.totalCycles], ecx);
 		xMOV(r8, ptrNative[&next.prog.x86ptr]);
 		xMOV(ptrNative[&x86Ptr], r8);
 		pxAssert(microVU0.textPtr() == microVU1.textPtr());
-		xJMP(ptrNative[&g_mvuCommunicationBody[next.index]]);
+		xJMP(ptrNative[&g_mvuCommunicationHotBody[next.index]]);
 	};
 	emit(microVU0);
 	select1Inactive0.SetTarget();
 	select1Behind.SetTarget();
 	emit(microVU1);
+	// Return and handoff share the same progress/request checks. Every guest
+	// export precedes this decision; only duplicate host guards are removed.
+	for (auto& jump : completed)
+		jump.SetTarget();
+	xSHR(ptr32[&vu.VI[REG_TPC].UL], 3);
+	finished.emplace_back(Jcc_Unconditional);
 	for (auto& jump : slow)
 		jump.SetTarget();
 }
