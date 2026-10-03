@@ -130,6 +130,7 @@ bool vif1CpuFifoEnabled();
 bool vif1CpuFifoActive();
 bool vif1CpuFifoPending();
 bool vif1CpuFifoBusBlocked();
+const bool* vif1CpuFifoBusBlockedAddress();
 void vif1CpuFifoDrain();
 void vif1CpuFifoReset();
 bool vif1CpuFifoFreeze(SaveStateBase& state);

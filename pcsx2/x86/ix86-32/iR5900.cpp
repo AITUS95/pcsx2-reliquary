@@ -22,6 +22,7 @@
 #include "common/FastJmp.h"
 #include "common/HeapArray.h"
 #include "common/Perf.h"
+#include <array>
 
 // Only for MOVQ workaround.
 #include "common/emitter/internal.h"
@@ -1846,14 +1847,34 @@ void recompileNextInstruction(bool delayslot, bool swapped_delay_slot)
 		//If the COP0 DIE bit is disabled, cycles should be doubled.
 		s_nBlockCycles += opcode.cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
 		opcode.recompile();
-		// Only 128-bit EE stores (SQ/SQC2) can enter WriteFIFO_VIF1. They
-		// need an event boundary if a full device FIFO holds the bus write;
-		// splitting after unrelated stores also changes EE/VU timing.
-		if (!delayslot && (opcode.flags & IS_STORE) &&
-			(opcode.flags & MEMTYPE_MASK) == MEMTYPE_QWORD && vif1CpuFifoEnabled())
+		if (!delayslot && !swapped_delay_slot && (opcode.flags & IS_STORE) && vif1CpuFifoEnabled())
 		{
-			iFlushCall(FLUSH_INTERPRETER);
-			g_branch = 2;
+			if ((opcode.flags & MEMTYPE_MASK) == MEMTYPE_QWORD)
+			{
+				iFlushCall(FLUSH_INTERPRETER);
+				g_branch = 2;
+			}
+			else if (!g_branch)
+			{
+				// Narrow hardware writes also reach the qword FIFO. Yield only
+				// when the bus is held; splitting ordinary RAM stores changes
+				// EE/VU event timing even when no FIFO write is outstanding.
+				xCMP(ptr8[vif1CpuFifoBusBlockedAddress()], 0);
+				xForwardJump32 unblocked(Jcc_Zero);
+				SaveBranchState();
+				const auto saved_x86 = std::to_array(x86regs);
+				const bool saved_pc = g_cpuFlushedPC;
+				const bool saved_code = g_cpuFlushedCode;
+				iFlushCall(FLUSH_INTERPRETER);
+				xMOV(ptr32[&cpuRegs.pc], pc);
+				xADD(ptr64[&cpuRegs.cycle], scaleblockcycles());
+				xJMP((void*)DispatcherEvent);
+				LoadBranchState();
+				std::memcpy(x86regs, saved_x86.data(), sizeof(x86regs));
+				g_cpuFlushedPC = saved_pc;
+				g_cpuFlushedCode = saved_code;
+				unblocked.SetTarget();
+			}
 		}
 	}
 

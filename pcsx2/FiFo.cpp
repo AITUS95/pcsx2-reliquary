@@ -28,6 +28,11 @@ bool vif1CpuFifoBusBlocked()
 	return s_vif1_cpu_store_pending;
 }
 
+const bool* vif1CpuFifoBusBlockedAddress()
+{
+	return &s_vif1_cpu_store_pending;
+}
+
 bool vif1CpuFifoActive()
 {
 	return s_vif1_cpu_draining;
