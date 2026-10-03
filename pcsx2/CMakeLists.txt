@@ -214,6 +214,7 @@ set(pcsx2Headers
 	vtlb.h
 	VUflags.h
 	VUmicro.h
+	VUCommunication.h
 	VUops.h)
 
 # CDVD sources
@@ -1081,6 +1082,7 @@ set(pcsx2x86Headers
 	x86/microVU_Clamp.inl
 	x86/microVU_Compile.inl
 	x86/microVU.cpp
+	x86/microVU_Communication.inl
 	x86/microVU_Execute.inl
 	x86/microVU_Flags.inl
 	x86/microVU.h
