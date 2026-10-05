@@ -95,6 +95,7 @@ void mVUreset(microVU& mVU)
 	mVUdispatcherCD(mVU);
 	mVUGenerateWaitMTVU(mVU);
 	mVUGenerateCopyPipelineState(mVU);
+	mVUGenerateCommunicationBudgetExit(mVU);
 	mVUGenerateCompareState(mVU);
 	if (use_soft_float)
 	{

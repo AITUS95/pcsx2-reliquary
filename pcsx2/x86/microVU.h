@@ -148,6 +148,7 @@ struct microVU
 	u8* compareStateF;// Function Ptr to search which compares all state.
 	u8* waitMTVU;     // Ptr to function to save registers/sync VU1 thread
 	u8* copyPLState;  // Ptr to function to copy pipeline state into microVU
+	u8* communicationBudgetExit;
 	const void* softMulExact;
 	const void* softMulExactVector;
 	const void* softAddExactLane;
