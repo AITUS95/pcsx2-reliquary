@@ -894,6 +894,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 	mVUcycles += drain;
 	mVUpBlock->cycles = mVUcycles;
 	mVUtestCycles(mVU, mFC);         // Update VU Cycles and Exit Early if Necessary
+	mVUpBlock->x86ptrCommunicationStart = xGetPtr();
 
 	// Second Pass
 	iPC = mVUstartPC;

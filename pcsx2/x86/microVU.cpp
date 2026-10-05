@@ -14,6 +14,7 @@ MvuCommunicationRequest g_mvuCommunicationRequest;
 MvuCommunicationHint g_mvuCommunicationHint[2];
 void* g_mvuCommunicationBody[2] = {};
 void* g_mvuCommunicationHotBody[2] = {};
+void* g_mvuCommunicationResidentBody[2] = {};
 
 const u8* mVUstatusTable()
 {
@@ -56,6 +57,7 @@ void mVUreset(microVU& mVU)
 {
 	g_mvuCommunicationHint[mVU.index] = {};
 	g_mvuPreparedEntry[mVU.index] = nullptr;
+	g_mvuCommunicationResidentBody[mVU.index] = nullptr;
 	const bool use_soft_float = CHECK_VU_SOFT(mVU.index);
 	const bool use_soft_madd_packed =
 		use_soft_float && g_cpu.vectorISA >= ProcessorFeatures::VectorISA::AVX2;
@@ -154,6 +156,7 @@ void mVUclose(microVU& mVU)
 {
 	g_mvuCommunicationHint[mVU.index] = {};
 	g_mvuPreparedEntry[mVU.index] = nullptr;
+	g_mvuCommunicationResidentBody[mVU.index] = nullptr;
 	// Delete Programs and Block Managers
 	for (u32 i = 0; i < (mVU.progSize / 2); i++)
 	{
@@ -445,13 +448,11 @@ static void* mVUprepareCommunication()
 	const u32 pc = (vu.VI[REG_TPC].UL << 3) & (mvu.microMemSize - 8);
 	auto& hint = g_mvuCommunicationHint[unit];
 	const microBlock* block = nullptr;
-	void* code;
 	if (hint.block && hint.pc == pc && !mvu.prog.cleared &&
 		hint.program == mvu.prog.cur && hint.program == mvu.prog.quick[vu.start_pc / 8].prog &&
 		mVUequalPipeline(mvu.prog.lpState, hint.block->pState))
 	{
 		block = hint.block;
-		code = block->x86ptrStart;
 		xSetTextPtr(mvu.textPtr());
 		xSetPtr(mvu.prog.x86ptr);
 		mvu.prog.isSame = -1;
@@ -459,7 +460,7 @@ static void* mVUprepareCommunication()
 	else
 	{
 		const microRegInfo entry = mvu.prog.lpState;
-		code = unit ? mVUexecute<1>(pc, 0) : mVUexecute<0>(pc, 0);
+		unit ? mVUexecute<1>(pc, 0) : mVUexecute<0>(pc, 0);
 		mvu.prog.x86ptr = xGetPtr();
 		mvu.prog.lpState = entry;
 		block = mvu.prog.cur->block[pc / 8]->search(mvu, &mvu.prog.lpState);
@@ -470,7 +471,10 @@ static void* mVUprepareCommunication()
 	r.pc = pc;
 	r.before = vu.cycle;
 	r.runCycles = block->cycles;
-	g_mvuPreparedEntry[unit] = code;
+	// Admission resolved the exact cost. Start after the ordinary budget
+	// check with a zero remainder, so the next block still exports normally.
+	pxAssert(block->x86ptrCommunicationStart);
+	g_mvuPreparedEntry[unit] = block->x86ptrCommunicationStart;
 	if (!unit)
 		VU0.flags &= ~VUFLAG_MFLAGSET;
 	vu.VI[REG_TPC].UL = pc;

@@ -65,6 +65,10 @@ void mVUdispatcherAB(mV)
 			xMOV(ptrNative[&g_mvuPreparedEntry[mVU.index]], 0);
 			xMOV(ptr32[&mVU.cycles], arg2regd);
 			xMOV(ptr32[&mVU.totalCycles], arg2regd);
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary_budget(Jcc_Zero);
+			xMOV(ptr32[&mVU.cycles], 0);
+			ordinary_budget.SetTarget();
 			xMOV(r8, ptrNative[&mVU.prog.x86ptr]);
 			xMOV(ptrNative[&x86Ptr], r8);
 			xForwardJump32 resolved(Jcc_Unconditional);
@@ -142,6 +146,11 @@ void mVUdispatcherAB(mV)
 		xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
 		xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
 		xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
+
+		// Same-unit native dispatch keeps these canonical STATUS/PQ registers
+		// live. Cross-unit dispatch and every host lookup still reload them.
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+			g_mvuCommunicationResidentBody[mVU.index] = xGetPtr();
 
 		// Jump to Recompiled Code Block
 		xJMP(rax);

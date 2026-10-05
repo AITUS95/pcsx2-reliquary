@@ -72,11 +72,12 @@ struct microJumpCache
 
 struct alignas(16) microBlock
 {
-	microRegInfo    pState;      // Detailed State of Pipeline
-	microRegInfo    pStateEnd;   // Detailed State of Pipeline at End of Block (needed by JR/JALR opcodes)
-	u8*             x86ptrStart; // Start of code (Entry point for block)
+	microRegInfo pState; // Detailed State of Pipeline
+	microRegInfo pStateEnd; // Detailed State of Pipeline at End of Block (needed by JR/JALR opcodes)
+	u8* x86ptrStart; // Start of code (Entry point for block)
+	u8* x86ptrCommunicationStart; // Entry after the already-accounted budget check.
 	u32 cycles; // Compiled quantum cost, including stalls and terminal drain.
-	microJumpCache* jumpCache;   // Will point to an array of entry points of size [16k/8] if block ends in JR/JALR
+	microJumpCache* jumpCache; // Will point to an array of entry points of size [16k/8] if block ends in JR/JALR
 };
 
 struct microTempRegInfo
