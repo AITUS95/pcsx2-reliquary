@@ -703,7 +703,9 @@ static void mvuPreloadRegisters(microVU& mVU, u32 endCount)
 			preloadVF(lvfr.reg);
 		}
 
-		if (info->lOp.branch)
+		// Communication blocks end after linear pairs. Later IR belongs to
+		// another block and must not contribute unused operand preloads.
+		if (info->lOp.branch || (EmuConfig.Gamefixes.VUCommunicationHack && info->isEOB))
 			break;
 	}
 
