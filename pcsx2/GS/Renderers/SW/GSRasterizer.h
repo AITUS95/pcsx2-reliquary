@@ -33,6 +33,7 @@ public:
 	int pixels;
 	int counter;
 	u8 scanmsk_value;
+	bool serial;
 
 	GSScanlineGlobalData global;
 
@@ -53,6 +54,7 @@ public:
 		, start(0)
 		, pixels(0)
 		, scanmsk_value(0)
+		, serial(false)
 	{
 		counter = s_counter++;
 	}
@@ -175,6 +177,7 @@ protected:
 	GSDrawScanline m_ds;
 
 	// Worker threads depend on the rasterizers, so don't change the order.
+	GSRasterizer m_serial_r;
 	std::vector<std::unique_ptr<GSRasterizer>> m_r;
 	std::vector<std::unique_ptr<GSWorker>> m_workers;
 	u8* m_scanline;

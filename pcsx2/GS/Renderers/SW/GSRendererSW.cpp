@@ -558,6 +558,16 @@ void GSRendererSW::Queue(GSRingHeap::SharedPtr<GSRasterizerData>& item)
 		fflush(s_fp);
 	}
 
+	const GSVector4i draw_rect = sd->bbox.rintersect(sd->scissor);
+	const auto crosses_page = [&](u32 psm) {
+		const int page_height = GSLocalMemory::m_psm[psm].pgs.y;
+		return draw_rect.top / page_height != (draw_rect.bottom - 1) / page_height;
+	};
+	// With zero page stride, different logical page rows write the same pixels.
+	// Keep primitive and scanline order instead of racing the rasterizer workers.
+	sd->serial = m_context->FRAME.FBW == 0 && !draw_rect.rempty() &&
+	             ((sd->global.sel.fwrite && crosses_page(sd->m_fpsm)) ||
+					 (sd->global.sel.zwrite && crosses_page(sd->m_zpsm)));
 	m_rl->Queue(item);
 
 	// invalidate new parts rendered onto
