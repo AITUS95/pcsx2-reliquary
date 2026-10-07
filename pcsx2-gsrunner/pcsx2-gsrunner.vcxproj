@@ -42,10 +42,11 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)3rdparty\simpleini\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)pcsx2</AdditionalIncludeDirectories>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;LZMA_API_STATIC;ENABLE_RAINTEGRATION;ENABLE_ACHIEVEMENTS;ENABLE_DISCORD_PRESENCE;ENABLE_OPENGL;ENABLE_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>HAVE_PARALLEL_GS;WIN32_LEAN_AND_MEAN;LZMA_API_STATIC;ENABLE_RAINTEGRATION;ENABLE_ACHIEVEMENTS;ENABLE_DISCORD_PRESENCE;ENABLE_OPENGL;ENABLE_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>$(SolutionDir)build\3rdparty\lib-$(Platform)-$(Configuration)\des.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
