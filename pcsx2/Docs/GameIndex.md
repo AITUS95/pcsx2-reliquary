@@ -248,6 +248,11 @@ These values are case-sensitive, so take care.  If you incorrectly specify a Gam
 * `VuAddSubHack`
   * For Tri-Ace Games: Star Ocean 3, Radiata Stories, Valkyrie Profile 2.
 
+* `VU1MaddiHack`
+  * Uses the precise multiply-add implementation for VU1 `MADDi`, including its flags, in both VU backends.
+    Other instructions retain their configured arithmetic. This stabilizes the floor-material
+    selection in Marvel Nemesis without forcing full VU1 soft-float or changing texture distance selection.
+
 * `VUOverflowHack`
   * Checks for possible float overflows (Superman Returns).
 

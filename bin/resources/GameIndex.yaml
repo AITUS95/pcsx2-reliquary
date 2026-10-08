@@ -24132,6 +24132,7 @@ SLES-53585:
   compat: 3
   gameFixes:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
+    - VU1MaddiHack # Stabilize camera-dependent floor-material selection.
 SLES-53587:
   name: "Garfield - Saving Arlene"
   region: "PAL-M5"

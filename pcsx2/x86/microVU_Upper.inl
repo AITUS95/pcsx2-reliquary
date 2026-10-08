@@ -441,12 +441,19 @@ static void mVU_FMACc(microVU& mVU, int recPass, int opCase, microOpcode opEnum,
 	{
 		const VuUpperFmacSoftDescriptor soft_op = mVUmakeUpperSoftDescriptor(
 			mVU, opCase, VuUpperFmacSoftKind::Madd, VuUpperFmacSoftDestination::Fd);
-		if (CHECK_VU_SOFT(mVU.index))
+		const bool scoped_maddi = mVU.index == 1 && opCase == 3 && EmuConfig.Gamefixes.VU1MaddiHack;
+		if (CHECK_VU_SOFT(mVU.index) || scoped_maddi)
 		{
 			if (mVUisUpperSoftRegisterDotFusionContinuation(mVU, soft_op))
 			{
 				mVU.profiler.EmitOp(opEnum);
 				return;
+			}
+			if (!CHECK_VU_SOFT(mVU.index))
+			{
+				// Legacy ACC writers do not maintain soft-float overflow provenance.
+				// Use the current ACC bits, not tags retained from an earlier soft-float state.
+				xMOV(ptr32[&mVU.regs().accflag], 0);
 			}
 			mVUemitUpperSoftExact(mVU, soft_op);
 			mVU.profiler.EmitOp(opEnum);

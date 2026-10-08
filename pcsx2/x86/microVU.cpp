@@ -57,15 +57,19 @@ void mVUreset(microVU& mVU)
 	g_mvuCommunicationHint[mVU.index] = {};
 	g_mvuPreparedEntry[mVU.index] = nullptr;
 	const bool use_soft_float = CHECK_VU_SOFT(mVU.index);
+	const bool use_soft_fmac = use_soft_float || (mVU.index == 1 && EmuConfig.Gamefixes.VU1MaddiHack);
 	const bool use_soft_madd_packed =
-		use_soft_float && g_cpu.vectorISA >= ProcessorFeatures::VectorISA::AVX2;
+		use_soft_fmac && g_cpu.vectorISA >= ProcessorFeatures::VectorISA::AVX2;
 
-	if (use_soft_float)
+	if (use_soft_fmac)
 	{
 		MicroVUSoftFloatTables::InitializeCorrectionTables();
 
 		if (!mVU.softBoothCache)
 			mVU.softBoothCache = std::make_unique<microVUSoftBoothCacheEntry[]>(mVUsoftBoothCacheSize);
+	}
+	if (use_soft_float)
+	{
 		if (!mVU.softSrtReciprocalCache)
 			mVU.softSrtReciprocalCache =
 				std::make_unique<microVUSoftUnaryCacheEntry[]>(mVUsoftLowerCacheSize);
@@ -94,7 +98,7 @@ void mVUreset(microVU& mVU)
 	mVUGenerateWaitMTVU(mVU);
 	mVUGenerateCopyPipelineState(mVU);
 	mVUGenerateCompareState(mVU);
-	if (use_soft_float)
+	if (use_soft_fmac)
 	{
 		mVUGenerateSoftAddExactLaneKernel(mVU);
 		mVUGenerateSoftAddLaneRepairKernel(mVU);
@@ -105,6 +109,9 @@ void mVUreset(microVU& mVU)
 			mVUGenerateSoftMaddPackedKernels(mVU);
 		mVUGenerateSoftMaddIntegratedLaneKernel(mVU);
 		mVUGenerateSoftMaddExactVectorKernels(mVU);
+	}
+	if (use_soft_float)
+	{
 		mVUGenerateLowerSrtReciprocalSoftExactKernel(mVU);
 		const mVUSoftDivCapTailPatch div_cap_tail = mVUGenerateLowerDivSoftExactKernel(mVU);
 		mVUGenerateLowerSqrtSoftExactKernel(mVU);
