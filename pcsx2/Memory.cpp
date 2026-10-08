@@ -459,7 +459,7 @@ void memMapKernelMem()
 	vtlb_VMap(0x80000000, 0x00000000, _1mb*512);
 	//0xa* mirror
 	vtlb_VMap(0xA0000000, 0x00000000, _1mb*512);
-	for (u32 addr = 0; addr < Ps2MemSize::ExposedRam; addr += EEMemoryTiming::PAGE_SIZE)
+	for (u32 addr = 0; addr < Ps2MemSize::ExposedRam; addr += EEMemoryTiming::VIRTUAL_PAGE_SIZE)
 	{
 		EEMemoryTiming::SetPage(0x80000000 + addr, addr, EEMemoryTiming::KSEG0_CACHE_MODE);
 		EEMemoryTiming::SetPage(0xA0000000 + addr, addr, 2);
@@ -1150,7 +1150,7 @@ void memReset()
 
 	vtlb_VMap(0x00000000,0x00000000,0x20000000);
 	vtlb_VMapUnmap(0x20000000,0x60000000);
-	for (u32 addr = 0; addr < Ps2MemSize::ExposedRam; addr += EEMemoryTiming::PAGE_SIZE)
+	for (u32 addr = 0; addr < Ps2MemSize::ExposedRam; addr += EEMemoryTiming::VIRTUAL_PAGE_SIZE)
 		EEMemoryTiming::SetPage(addr, addr, 3);
 
 	std::memset(s_ba, 0, sizeof(s_ba));

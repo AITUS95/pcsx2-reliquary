@@ -245,7 +245,7 @@ void MapTLB(const tlbs& t, int i)
 			Console.Warning("COP0: Mapping Scratchpad to non-default address 0x%08X", t.VPN2());
 
 		vtlb_VMapBuffer(t.VPN2(), eeMem->Scratch, Ps2MemSize::Scratch);
-		for (u32 offset = 0; offset < Ps2MemSize::Scratch; offset += EEMemoryTiming::PAGE_SIZE)
+		for (u32 offset = 0; offset < Ps2MemSize::Scratch; offset += EEMemoryTiming::VIRTUAL_PAGE_SIZE)
 			EEMemoryTiming::ClearPage(t.VPN2() + offset);
 	}
 	else
@@ -303,7 +303,7 @@ void UnmapTLB(const tlbs& t, int i)
 	if (t.isSPR())
 	{
 		vtlb_VMapUnmap(t.VPN2(), Ps2MemSize::Scratch);
-		for (u32 offset = 0; offset < Ps2MemSize::Scratch; offset += EEMemoryTiming::PAGE_SIZE)
+		for (u32 offset = 0; offset < Ps2MemSize::Scratch; offset += EEMemoryTiming::VIRTUAL_PAGE_SIZE)
 			EEMemoryTiming::ClearPage(t.VPN2() + offset);
 		return;
 	}

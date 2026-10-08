@@ -11,7 +11,7 @@
 namespace EEMemoryTiming
 {
 	inline constexpr u32 PAGE_BITS = 12;
-	inline constexpr u32 PAGE_SIZE = 1u << PAGE_BITS;
+	inline constexpr u32 VIRTUAL_PAGE_SIZE = 1u << PAGE_BITS;
 	inline constexpr u32 PAGE_COUNT = 1u << (32 - PAGE_BITS);
 
 	inline constexpr u8 KSEG0_CACHE_MODE = 8;

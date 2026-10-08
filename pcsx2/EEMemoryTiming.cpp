@@ -70,7 +70,7 @@ namespace EEMemoryTiming
 		const u32 page = vaddr >> PAGE_BITS;
 
 		s_cache_modes[page] = paddr < s_ram_size ? cache_mode : UNMAPPED;
-		s_physical_pages[page] = paddr & ~(PAGE_SIZE - 1);
+		s_physical_pages[page] = paddr & ~(VIRTUAL_PAGE_SIZE - 1);
 		ReadWaitCycles[page] = GetRAMReadWait(s_cache_modes[page]);
 	}
 
@@ -144,7 +144,7 @@ namespace EEMemoryTiming
 				break;
 
 			case 0x04: // IXSTG
-				tag = {tag_lo & ~(PAGE_SIZE - 1), (tag_lo & 0x20) != 0, (tag_lo & 0x10) != 0};
+				tag = {tag_lo & ~(VIRTUAL_PAGE_SIZE - 1), (tag_lo & 0x20) != 0, (tag_lo & 0x10) != 0};
 				break;
 
 			case 0x07: // IXIN

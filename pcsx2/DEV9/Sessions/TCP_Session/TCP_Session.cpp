@@ -141,13 +141,13 @@ namespace Sessions
 
 			const int window = windowSize.load();
 			const SentData& first = sentData.front();
-			const int length = std::min({static_cast<int>(first.bytes.size() - first.offset),
+			const int length = (std::min)({static_cast<int>(first.bytes.size() - first.offset),
 				window, maxSegmentSize - (sendTimeStamps ? 12 : 0)});
 			if (length <= 0)
 				return std::nullopt;
 
 			if (!requested)
-				retransmitTimeout = std::min(retransmitTimeout * 2, std::chrono::seconds(60));
+				retransmitTimeout = (std::min)(retransmitTimeout * 2, std::chrono::seconds(60));
 
 			data = std::make_unique<PayloadData>(length);
 			memcpy(data->data.get(), first.bytes.data() + first.offset, length);
@@ -180,7 +180,7 @@ namespace Sessions
 			return 0;
 
 		const int outstanding = GetDelta(_MySequenceNumber, _ReceivedAckNumber);
-		return std::min(maxSegmentSize - (sendTimeStamps ? 12 : 0), windowSize.load() - outstanding);
+		return (std::min)(maxSegmentSize - (sendTimeStamps ? 12 : 0), windowSize.load() - outstanding);
 	}
 
 	std::tuple<u32, u32> TCP_Session::GetAckRange()
