@@ -79,17 +79,27 @@ static void mVUemitCommunicationDispatch(microVU& mVU, std::vector<xForwardJump3
 		xMOV(ptr32[&next.prog.isSame], -1);
 		if (!next.index)
 			xAND(ptr32[&VU0.flags], ~VUFLAG_MFLAGSET);
-		xMOV(rax, ptrNative[rax + offsetof(microBlock, x86ptrStart)]);
+		xMOV(rax, ptrNative[rax + offsetof(microBlock, x86ptrCommunicationStart)]);
 
-		// Entry and cycle counters are already resolved. Reload canonical guest
-		// flags/PQ through the same body without repeating argument/lookup work.
+		// Entry and cycle counters are already resolved. Keep the canonical
+		// STATUS/PQ registers only when no other VU or host lookup intervened.
 		xMOV(ptr32[&r.runCycles], ecx);
-		xMOV(ptr32[&next.cycles], ecx);
+		xMOV(ptr32[&next.cycles], 0);
 		xMOV(ptr32[&next.totalCycles], ecx);
 		xMOV(r8, ptrNative[&next.prog.x86ptr]);
 		xMOV(ptrNative[&x86Ptr], r8);
 		pxAssert(microVU0.textPtr() == microVU1.textPtr());
-		xJMP(ptrNative[&g_mvuCommunicationHotBody[next.index]]);
+#ifdef mVUprofileProg
+		// Opcode profiling always calls host cleanup, which can clobber xmmPQ.
+		constexpr bool resident = false;
+#else
+		// Skip the import only if exit leaves the VU execution mode intact.
+		// Otherwise the normal entry must also restore MXCSR.
+		const bool resident = same && (!mvuNeedsFPCRUpdate(next) ||
+										  (CHECK_VU_SOFT(0) && CHECK_VU_SOFT(1)));
+#endif
+		xJMP(ptrNative[resident ? &g_mvuCommunicationResidentBody[next.index] :
+								  &g_mvuCommunicationHotBody[next.index]]);
 	};
 	emit(microVU0);
 	select1Inactive0.SetTarget();

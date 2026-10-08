@@ -487,21 +487,32 @@ void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 
 	xForwardJNS32 skip;
 
-	xLoadFarAddr(rax, &mVUpBlock->pState);
-	xCALL((void*)mVU.copyPLState);
-	if (EmuConfig.Gamefixes.VUCommunicationHack)
+	if (!isCOP2 && mVU.communicationBudgetExit)
 	{
-		auto& hint = g_mvuCommunicationHint[mVU.index];
+		mVU.regAlloc->TDwritebackAll();
+		xLoadFarAddr(rax, mVUpBlock);
 		xLoadFarAddr(gprT2q, mVU.prog.cur);
-		xMOV(ptrNative[&hint.program], gprT2q);
-		xLoadFarAddr(gprT2q, mVUpBlock);
-		xMOV(ptrNative[&hint.block], gprT2q);
-		xMOV(ptr32[&hint.pc], xPC);
+		xMOV(ptr32[&mVU.regs().VI[REG_TPC].UL], xPC);
+		xJMP(mVU.communicationBudgetExit);
 	}
+	else
+	{
+		xLoadFarAddr(rax, &mVUpBlock->pState);
+		xCALL((void*)mVU.copyPLState);
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			auto& hint = g_mvuCommunicationHint[mVU.index];
+			xLoadFarAddr(gprT2q, mVU.prog.cur);
+			xMOV(ptrNative[&hint.program], gprT2q);
+			xLoadFarAddr(gprT2q, mVUpBlock);
+			xMOV(ptrNative[&hint.block], gprT2q);
+			xMOV(ptr32[&hint.pc], xPC);
+		}
 
-	if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack)
-		xMOV(ptr32[&mVU.regs().nextBlockCycles], mVUcycles);
-	mVUendProgram(mVU, &mFC, 0);
+		if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack)
+			xMOV(ptr32[&mVU.regs().nextBlockCycles], mVUcycles);
+		mVUendProgram(mVU, &mFC, 0);
+	}
 
 	skip.SetTarget();
 
@@ -692,7 +703,9 @@ static void mvuPreloadRegisters(microVU& mVU, u32 endCount)
 			preloadVF(lvfr.reg);
 		}
 
-		if (info->lOp.branch)
+		// Communication blocks end after linear pairs. Later IR belongs to
+		// another block and must not contribute unused operand preloads.
+		if (info->lOp.branch || (EmuConfig.Gamefixes.VUCommunicationHack && info->isEOB))
 			break;
 	}
 
@@ -894,6 +907,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 	mVUcycles += drain;
 	mVUpBlock->cycles = mVUcycles;
 	mVUtestCycles(mVU, mFC);         // Update VU Cycles and Exit Early if Necessary
+	mVUpBlock->x86ptrCommunicationStart = xGetPtr();
 
 	// Second Pass
 	iPC = mVUstartPC;
