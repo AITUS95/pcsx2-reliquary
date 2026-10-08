@@ -520,7 +520,7 @@ static void mVUGenerateCompareState(mV)
 //------------------------------------------------------------------
 
 // Executes for number of cycles
-_mVUt void* mVUexecute(u32 startPC, u32 cycles)
+_mVUt void* mVUexecute(u32 startPC, u32 cycles, microBlock** resolvedBlock = nullptr)
 {
 
 	microVU& mVU = mVUx;
@@ -538,9 +538,11 @@ _mVUt void* mVUexecute(u32 startPC, u32 cycles)
 	if (void* entry = g_mvuPreparedEntry[vuIndex])
 	{
 		g_mvuPreparedEntry[vuIndex] = nullptr;
+		if (resolvedBlock)
+			*resolvedBlock = nullptr;
 		return entry;
 	}
-	return mVUsearchProg<vuIndex>(startPC & vuLimit, (uptr)&mVU.prog.lpState); // Find and set correct program
+	return mVUsearchProg<vuIndex>(startPC & vuLimit, (uptr)&mVU.prog.lpState, resolvedBlock); // Find and set correct program
 }
 
 //------------------------------------------------------------------

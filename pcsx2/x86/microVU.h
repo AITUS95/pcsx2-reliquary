@@ -320,7 +320,7 @@ int mVUdebugNow = 0;
 // Main Functions
 extern void mVUclear(mV, u32, u32);
 extern void mVUreset(microVU& mVU);
-extern void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState);
+extern void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState, microBlock** resolvedBlock = nullptr);
 _mVUt extern void* mVUcompileJIT(u32 startPC, uptr ptr);
 
 // Prototypes for Linux
@@ -332,7 +332,7 @@ mVUop(mVUopL);
 // Private Functions
 extern void mVUcacheProg(microVU& mVU, microProgram& prog);
 extern void mVUdeleteProg(microVU& mVU, microProgram*& prog);
-_mVUt extern void* mVUsearchProg(u32 startPC, uptr pState);
+_mVUt extern void* mVUsearchProg(u32 startPC, uptr pState, microBlock** resolvedBlock = nullptr);
 extern const u8* mVUstatusTable();
 extern void* g_mvuPreparedEntry[2];
 struct MvuCommunicationRequest
