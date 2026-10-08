@@ -442,15 +442,10 @@ __fi static bool mVUequalPipeline(const microRegInfo& a, const microRegInfo& b)
 	return _mm_movemask_epi8(_mm_cmpeq_epi8(diff, _mm_setzero_si128())) == 0xffff;
 }
 
-static void* mVUprepareCommunication()
+template <u32 unit>
+static __noinline void* mVUprepareCommunicationForUnit()
 {
 	auto& r = g_mvuCommunicationRequest;
-	const VURegs& requested = vuRegs[r.requestor];
-	const u32 stat = VU0.VI[REG_VPU_STAT].UL;
-	if (!(stat & (r.requestor ? 0x100 : 1)) || requested.cycle >= r.target ||
-		(!r.requestor && (VU0.flags & VUFLAG_MFLAGSET)))
-		return nullptr;
-	const u32 unit = VUCommunication::SelectUnit(stat & 1, stat & 0x100, VU0.cycle, VU1.cycle);
 	VURegs& vu = vuRegs[unit];
 	microVU& mvu = unit ? microVU1 : microVU0;
 	const u32 pc = (vu.VI[REG_TPC].UL << 3) & (mvu.microMemSize - 8);
@@ -487,6 +482,19 @@ static void* mVUprepareCommunication()
 		VU0.flags &= ~VUFLAG_MFLAGSET;
 	vu.VI[REG_TPC].UL = pc;
 	return g_mvuCommunicationBody[unit];
+}
+
+static void* mVUprepareCommunication()
+{
+	auto& r = g_mvuCommunicationRequest;
+	const VURegs& requested = vuRegs[r.requestor];
+	const u32 stat = VU0.VI[REG_VPU_STAT].UL;
+	if (!(stat & (r.requestor ? 0x100 : 1)) || requested.cycle >= r.target ||
+		(!r.requestor && (VU0.flags & VUFLAG_MFLAGSET)))
+		return nullptr;
+	const u32 unit = VUCommunication::SelectUnit(stat & 1, stat & 0x100, VU0.cycle, VU1.cycle);
+	// Keep unit-specific pipeline addresses constant through lookup and export.
+	return unit ? mVUprepareCommunicationForUnit<1>() : mVUprepareCommunicationForUnit<0>();
 }
 
 void* mVUcommunicationNext(u32 unit)
