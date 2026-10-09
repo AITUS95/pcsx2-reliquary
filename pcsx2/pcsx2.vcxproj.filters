@@ -470,6 +470,9 @@
     <ClCompile Include="HddImageOperations.cpp">
       <Filter>Misc</Filter>
     </ClCompile>
+    <ClCompile Include="EEMemoryTiming.cpp">
+      <Filter>System\Ps2\EmotionEngine\Memory</Filter>
+    </ClCompile>
     <ClCompile Include="Memory.cpp">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClCompile>
@@ -1554,6 +1557,9 @@
       <Filter>System\Ps2\EmotionEngine\Hardware</Filter>
     </ClInclude>
     <ClInclude Include="Cache.h">
+      <Filter>System\Ps2\EmotionEngine\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="EEMemoryTiming.h">
       <Filter>System\Ps2\EmotionEngine\Memory</Filter>
     </ClInclude>
     <ClInclude Include="Memory.h">

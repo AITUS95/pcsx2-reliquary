@@ -510,6 +510,7 @@
     <ClCompile Include="ChdHddImage.cpp" />
     <ClCompile Include="VhdHddImage.cpp" />
     <ClCompile Include="HddImageOperations.cpp" />
+    <ClCompile Include="EEMemoryTiming.cpp" />
     <ClCompile Include="Memory.cpp" />
     <ClCompile Include="x86\iR5900Analysis.cpp">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
@@ -990,6 +991,7 @@
     <ClInclude Include="Hw.h" />
     <ClInclude Include="ps2\HwInternal.h" />
     <ClInclude Include="Cache.h" />
+    <ClInclude Include="EEMemoryTiming.h" />
     <ClInclude Include="Memory.h" />
     <ClInclude Include="Vif_Dynarec.h" />
     <ClInclude Include="Vif_HashBucket.h" />
