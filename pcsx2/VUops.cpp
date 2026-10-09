@@ -976,7 +976,19 @@ static __fi void vuMADDbc(VURegs* VU, u32 bc)
 		applyTernaryMACOpBroadcast<_vuOpMADD, MACOpDst::Fd>(VU, bc);
 }
 
-static __fi void _vuMADDi(VURegs* VU) { vuMADDbc(VU, VU->VI[REG_I].UL); }
+static __fi void _vuMADDi(VURegs* VU)
+{
+	if (VU == &VU1 && EmuConfig.Gamefixes.VU1MaddiHack && !vuUsesSoftFloat(VU))
+	{
+		// Legacy ACC arithmetic supplies value bits without soft-float overflow tags.
+		VU->accflag = 0;
+		applyAccurateAccumulatorTernaryMACOpBroadcastWithMulUnderflow<_vuAccurateOpMADDWithAccOverflow, MACOpDst::Fd>(VU, VU->VI[REG_I].UL);
+	}
+	else
+	{
+		vuMADDbc(VU, VU->VI[REG_I].UL);
+	}
+}
 static __fi void _vuMADDq(VURegs* VU) { vuMADDbc(VU, VU->VI[REG_Q].UL); }
 static __fi void _vuMADDx(VURegs* VU) { vuMADDbc(VU, VU->VF[_Ft_].i.x); }
 static __fi void _vuMADDy(VURegs* VU) { vuMADDbc(VU, VU->VF[_Ft_].i.y); }

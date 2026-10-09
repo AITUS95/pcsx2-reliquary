@@ -115,6 +115,7 @@
               "VUOverflowHack",
               "FullVU0SyncHack",
               "VUCommunicationHack",
+              "VU1MaddiHack",
               "VUSyncHack",
               "XGKickHack"
             ]

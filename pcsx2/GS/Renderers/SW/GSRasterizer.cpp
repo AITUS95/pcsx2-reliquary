@@ -1501,6 +1501,7 @@ void GSSingleRasterizer::PrintStats()
 //
 
 GSRasterizerList::GSRasterizerList(int threads)
+	: m_serial_r(&m_ds, 0, 1)
 {
 	m_thread_height = compute_best_thread_height(threads);
 
@@ -1551,6 +1552,13 @@ void GSRasterizerList::Queue(const GSRingHeap::SharedPtr<GSRasterizerData>& data
 	}
 
 	pxAssert(r.top >= 0 && r.top <= 2048 && r.bottom >= 0 && r.bottom <= 2048);
+	if (data->serial)
+	{
+		// Share the worker code cache; another GSDrawScanline would reset it.
+		Sync();
+		m_serial_r.Draw(*data.get());
+		return;
+	}
 
 	int top = r.top >> m_thread_height;
 	int bottom = std::min<int>((r.bottom + (1 << m_thread_height) - 1) >> m_thread_height, top + (int)m_workers.size());
@@ -1589,7 +1597,7 @@ bool GSRasterizerList::IsSynced() const
 
 int GSRasterizerList::GetPixels(bool reset)
 {
-	int pixels = 0;
+	int pixels = m_serial_r.GetPixels(reset);
 
 	for (size_t i = 0; i < m_workers.size(); i++)
 	{

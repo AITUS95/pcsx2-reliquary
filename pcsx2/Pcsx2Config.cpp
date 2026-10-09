@@ -1575,6 +1575,7 @@ static const char* const tbl_GamefixNames[] =
 		"FullVU0Sync",
 		"MixSpdifAnalog",
 		"VUCommunication",
+		"VU1Maddi",
 };
 
 const char* Pcsx2Config::GamefixOptions::GetGameFixName(GamefixId id)
@@ -1619,6 +1620,7 @@ void Pcsx2Config::GamefixOptions::Set(GamefixId id, bool enabled)
 		case Fix_FullVU0Sync:         FullVU0SyncHack         = enabled; break;
 		case Fix_MixSpdifAnalog:      MixSpdifAnalogHack      = enabled; break;
 		case Fix_VUCommunication:     VUCommunicationHack     = enabled; break;
+		case Fix_VU1Maddi:            VU1MaddiHack            = enabled; break;
 		default:                                                         break;
 			// clang-format on
 	}
@@ -1659,6 +1661,7 @@ bool Pcsx2Config::GamefixOptions::Get(GamefixId id) const
 		case Fix_FullVU0Sync:         return FullVU0SyncHack;
 		case Fix_MixSpdifAnalog:      return MixSpdifAnalogHack;
 		case Fix_VUCommunication:     return VUCommunicationHack;
+		case Fix_VU1Maddi:            return VU1MaddiHack;
 		default:                      return false;
 			// clang-format on
 	}
@@ -1689,6 +1692,7 @@ void Pcsx2Config::GamefixOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(FullVU0SyncHack);
 	SettingsWrapBitBool(MixSpdifAnalogHack);
 	SettingsWrapBitBool(VUCommunicationHack);
+	SettingsWrapBitBool(VU1MaddiHack);
 }
 
 const char* Pcsx2Config::DebugAnalysisOptions::RunConditionNames[] = {

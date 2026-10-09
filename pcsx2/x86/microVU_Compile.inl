@@ -487,21 +487,32 @@ void mVUtestCycles(microVU& mVU, microFlagCycles& mFC)
 
 	xForwardJNS32 skip;
 
-	xLoadFarAddr(rax, &mVUpBlock->pState);
-	xCALL((void*)mVU.copyPLState);
-	if (EmuConfig.Gamefixes.VUCommunicationHack)
+	if (!isCOP2 && mVU.communicationBudgetExit)
 	{
-		auto& hint = g_mvuCommunicationHint[mVU.index];
+		mVU.regAlloc->TDwritebackAll();
+		xLoadFarAddr(rax, mVUpBlock);
 		xLoadFarAddr(gprT2q, mVU.prog.cur);
-		xMOV(ptrNative[&hint.program], gprT2q);
-		xLoadFarAddr(gprT2q, mVUpBlock);
-		xMOV(ptrNative[&hint.block], gprT2q);
-		xMOV(ptr32[&hint.pc], xPC);
+		xMOV(ptr32[&mVU.regs().VI[REG_TPC].UL], xPC);
+		xJMP(mVU.communicationBudgetExit);
 	}
+	else
+	{
+		xLoadFarAddr(rax, &mVUpBlock->pState);
+		xCALL((void*)mVU.copyPLState);
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			auto& hint = g_mvuCommunicationHint[mVU.index];
+			xLoadFarAddr(gprT2q, mVU.prog.cur);
+			xMOV(ptrNative[&hint.program], gprT2q);
+			xLoadFarAddr(gprT2q, mVUpBlock);
+			xMOV(ptrNative[&hint.block], gprT2q);
+			xMOV(ptr32[&hint.pc], xPC);
+		}
 
-	if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack)
-		xMOV(ptr32[&mVU.regs().nextBlockCycles], mVUcycles);
-	mVUendProgram(mVU, &mFC, 0);
+		if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack)
+			xMOV(ptr32[&mVU.regs().nextBlockCycles], mVUcycles);
+		mVUendProgram(mVU, &mFC, 0);
+	}
 
 	skip.SetTarget();
 
@@ -692,7 +703,9 @@ static void mvuPreloadRegisters(microVU& mVU, u32 endCount)
 			preloadVF(lvfr.reg);
 		}
 
-		if (info->lOp.branch)
+		// Communication blocks end after linear pairs. Later IR belongs to
+		// another block and must not contribute unused operand preloads.
+		if (info->lOp.branch || (EmuConfig.Gamefixes.VUCommunicationHack && info->isEOB))
 			break;
 	}
 
@@ -894,6 +907,7 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 	mVUcycles += drain;
 	mVUpBlock->cycles = mVUcycles;
 	mVUtestCycles(mVU, mFC);         // Update VU Cycles and Exit Early if Necessary
+	mVUpBlock->x86ptrCommunicationStart = xGetPtr();
 
 	// Second Pass
 	iPC = mVUstartPC;
@@ -1067,18 +1081,33 @@ perf_and_return:
 	return thisPtr;
 }
 
+static __noinline void* mVUcompilePreservingPipeline(microVU& mVU, u32 startPC, uptr pState)
+{
+	// Communication admission needs the input pipeline after lookup. Only
+	// compilation can modify it; keep its preservation off the cached path.
+	const microRegInfo entry = mVU.prog.lpState;
+	void* code = mVUcompile(mVU, startPC, pState);
+	mVU.prog.lpState = entry;
+	return code;
+}
+
 // Returns the entry point of the block (compiles it if not found)
-__fi void* mVUentryGet(microVU& mVU, microBlockManager* block, u32 startPC, uptr pState)
+__fi void* mVUentryGet(microVU& mVU, microBlockManager* block, u32 startPC, uptr pState, microBlock** resolvedBlock)
 {
 	microBlock* pBlock = block->search(mVU, (microRegInfo*)pState);
+	// A resolved-block request preserves lpState through compilation. Reuse
+	// a cached match only within this host lookup; resolve again after a miss.
+	if (resolvedBlock)
+		*resolvedBlock = pBlock;
 	if (pBlock)
 		return pBlock->x86ptrStart;
-	else
-		return mVUcompile(mVU, startPC, pState);
+	if (resolvedBlock)
+		return mVUcompilePreservingPipeline(mVU, startPC, pState);
+	return mVUcompile(mVU, startPC, pState);
 }
 
 // Search for Existing Compiled Block (if found, return x86ptr; else, compile and return x86ptr)
-__fi void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState)
+__fi void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState, microBlock** resolvedBlock)
 {
 
 	pxAssert((startPC & 7) == 0);
@@ -1086,7 +1115,7 @@ __fi void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState)
 	startPC &= mVU.microMemSize - 8;
 
 	blockCreate(startPC / 8);
-	return mVUentryGet(mVU, mVUblocks[startPC / 8], startPC, pState);
+	return mVUentryGet(mVU, mVUblocks[startPC / 8], startPC, pState, resolvedBlock);
 }
 
 // mVUcompileJIT() - Called By JR/JALR during execution

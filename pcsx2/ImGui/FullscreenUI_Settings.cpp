@@ -5854,6 +5854,9 @@ void FullscreenUI::DrawGameFixesSettingsPage()
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_ARROWS_ROTATE, "VU Communication Synchronization"),
 		FSUI_CSTR("Preserves communication boundaries between the EE and both VUs. Disables MTVU, Instant VU1, and EE cycle rate/skip. May significantly reduce performance."),
 		"EmuCore/Gamefixes", "VUCommunicationHack", false);
+	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_MICROCHIP, "VU1 MADDi Precision"),
+		FSUI_CSTR("Uses precise VU1 MADDi arithmetic in the interpreter and recompiler. Can reduce floor-material flickering in Marvel Nemesis. Other instructions retain their configured arithmetic."),
+		"EmuCore/Gamefixes", "VU1MaddiHack", false);
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_MICROCHIP, "VU I Bit Hack"),
 		FSUI_CSTR("Avoids constant recompilation in some games. Known to affect the following games: Scarface The World is Yours, Crash Tag Team Racing."), "EmuCore/Gamefixes", "IbitHack", false);
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_PLUS, "VU Add Hack"),

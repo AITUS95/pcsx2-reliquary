@@ -179,6 +179,7 @@ enum GamefixId
 	Fix_FullVU0Sync,
 	Fix_MixSpdifAnalog,
 	Fix_VUCommunication,
+	Fix_VU1Maddi,
 
 	GamefixId_COUNT
 };
@@ -1161,7 +1162,8 @@ struct Pcsx2Config
 			BlitInternalFPSHack : 1, // Disables privileged register write-based FPS detection.
 			FullVU0SyncHack : 1, // Forces tight VU0 sync on every COP2 instruction.
 			MixSpdifAnalogHack : 1, // Mixes S/PDIF bypass PCM with normal analogue SPU2 output.
-			VUCommunicationHack : 1; // Preserve instruction-pair communication boundaries between EE/VU0/VU1.
+			VUCommunicationHack : 1, // Preserve instruction-pair communication boundaries between EE/VU0/VU1.
+			VU1MaddiHack : 1; // Use precise VU1 MADDi arithmetic without enabling full soft-float.
 		BITFIELD_END
 
 		GamefixOptions();

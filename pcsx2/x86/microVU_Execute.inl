@@ -65,6 +65,10 @@ void mVUdispatcherAB(mV)
 			xMOV(ptrNative[&g_mvuPreparedEntry[mVU.index]], 0);
 			xMOV(ptr32[&mVU.cycles], arg2regd);
 			xMOV(ptr32[&mVU.totalCycles], arg2regd);
+			xCMP(ptr32[&g_mvuCommunicationRequest.active], 0);
+			xForwardJump32 ordinary_budget(Jcc_Zero);
+			xMOV(ptr32[&mVU.cycles], 0);
+			ordinary_budget.SetTarget();
 			xMOV(r8, ptrNative[&mVU.prog.x86ptr]);
 			xMOV(ptrNative[&x86Ptr], r8);
 			xForwardJump32 resolved(Jcc_Unconditional);
@@ -142,6 +146,11 @@ void mVUdispatcherAB(mV)
 		xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
 		xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
 		xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
+
+		// Same-unit native dispatch keeps these canonical STATUS/PQ registers
+		// live. Cross-unit dispatch and every host lookup still reload them.
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+			g_mvuCommunicationResidentBody[mVU.index] = xGetPtr();
 
 		// Jump to Recompiled Code Block
 		xJMP(rax);
@@ -348,10 +357,8 @@ static void mVUGenerateWaitMTVU(mV)
 		mVU.index ? "VU1WaitMTVU" : "VU0WaitMTVU");
 }
 
-static void mVUGenerateCopyPipelineState(mV)
+static void mVUemitCopyPipelineState(mV)
 {
-	mVU.copyPLState = xGetAlignedCallTarget();
-
 	xLoadFarAddr(rdx, reinterpret_cast<u8*>(&mVU.prog.lpState));
 
 	if (g_cpu.vectorISA >= ProcessorFeatures::VectorISA::AVX)
@@ -382,11 +389,64 @@ static void mVUGenerateCopyPipelineState(mV)
 		xMOVUPS(ptr[rdx + 64u], xmm4);
 		xMOVUPS(ptr[rdx + 80u], xmm5);
 	}
+}
 
+static void mVUGenerateCopyPipelineState(mV)
+{
+	mVU.copyPLState = xGetAlignedCallTarget();
+	mVUemitCopyPipelineState(mVU);
 	xRET();
 
 	Perf::any.Register(mVU.copyPLState, static_cast<u32>(xGetPtr() - mVU.copyPLState),
 		mVU.index ? "VU1CopyPLState" : "VU0CopyPLState");
+}
+
+static void mVUGenerateCommunicationBudgetExit(mV)
+{
+	mVU.communicationBudgetExit = nullptr;
+	if (!EmuConfig.Gamefixes.VUCommunicationHack)
+		return;
+
+	// Entry is before preload/admission. Branch links have already flushed
+	// guest registers and canonicalized the flag/PQ instances. RAX identifies
+	// the next block, RCX its program; no guest work occurs in this shared tail.
+	static_assert(offsetof(microBlock, pState) == 0);
+	pxAssert(gprT2q.GetId() == rcx.GetId());
+	mVU.communicationBudgetExit = xGetAlignedCallTarget();
+	mVUemitCopyPipelineState(mVU);
+	auto& hint = g_mvuCommunicationHint[mVU.index];
+	xMOV(ptrNative[&hint.program], gprT2q);
+	xMOV(ptrNative[&hint.block], rax);
+	xMOV(edx, ptr32[&mVU.regs().VI[REG_TPC].UL]);
+	xMOV(ptr32[&hint.pc], edx);
+	if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack)
+	{
+		xMOV(edx, ptr32[rax + offsetof(microBlock, cycles)]);
+		xMOV(ptr32[&mVU.regs().nextBlockCycles], edx);
+	}
+
+	// Nonterminal export, with canonical active/future instances zero.
+	// Mature architectural flags are published before the preceding upper;
+	// this tail only backs up the physical STATUS versions for the dispatcher.
+	xMOVSS(ptr32[&mVU.regs().VI[REG_Q].UL], xmmPQ);
+	xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
+	xMOVSS(ptr32[&mVU.regs().pending_q], xmmPQ);
+	xPSHUF.D(xmmPQ, xmmPQ, 0xe1);
+	if (isVU1)
+	{
+		xPSHUF.D(xmmPQ, xmmPQ, 0xc6);
+		xMOVSS(ptr32[&mVU.regs().VI[REG_P].UL], xmmPQ);
+		xPSHUF.D(xmmPQ, xmmPQ, 0x87);
+		xMOVSS(ptr32[&mVU.regs().pending_p], xmmPQ);
+		xPSHUF.D(xmmPQ, xmmPQ, 0x27);
+	}
+	xMOV(ptr32[&mVU.regs().micro_statusflags[0]], gprF0);
+	xMOV(ptr32[&mVU.regs().micro_statusflags[1]], gprF1);
+	xMOV(ptr32[&mVU.regs().micro_statusflags[2]], gprF2);
+	xMOV(ptr32[&mVU.regs().micro_statusflags[3]], gprF3);
+	xJMP(mVU.exitFunct);
+	Perf::any.Register(mVU.communicationBudgetExit, static_cast<u32>(xGetPtr() - mVU.communicationBudgetExit),
+		mVU.index ? "VU1CommunicationBudgetExit" : "VU0CommunicationBudgetExit");
 }
 
 //------------------------------------------------------------------
@@ -460,7 +520,7 @@ static void mVUGenerateCompareState(mV)
 //------------------------------------------------------------------
 
 // Executes for number of cycles
-_mVUt void* mVUexecute(u32 startPC, u32 cycles)
+_mVUt void* mVUexecute(u32 startPC, u32 cycles, microBlock** resolvedBlock = nullptr)
 {
 
 	microVU& mVU = mVUx;
@@ -478,9 +538,11 @@ _mVUt void* mVUexecute(u32 startPC, u32 cycles)
 	if (void* entry = g_mvuPreparedEntry[vuIndex])
 	{
 		g_mvuPreparedEntry[vuIndex] = nullptr;
+		if (resolvedBlock)
+			*resolvedBlock = nullptr;
 		return entry;
 	}
-	return mVUsearchProg<vuIndex>(startPC & vuLimit, (uptr)&mVU.prog.lpState); // Find and set correct program
+	return mVUsearchProg<vuIndex>(startPC & vuLimit, (uptr)&mVU.prog.lpState, resolvedBlock); // Find and set correct program
 }
 
 //------------------------------------------------------------------

@@ -148,6 +148,7 @@ struct microVU
 	u8* compareStateF;// Function Ptr to search which compares all state.
 	u8* waitMTVU;     // Ptr to function to save registers/sync VU1 thread
 	u8* copyPLState;  // Ptr to function to copy pipeline state into microVU
+	u8* communicationBudgetExit;
 	const void* softMulExact;
 	const void* softMulExactVector;
 	const void* softAddExactLane;
@@ -319,7 +320,7 @@ int mVUdebugNow = 0;
 // Main Functions
 extern void mVUclear(mV, u32, u32);
 extern void mVUreset(microVU& mVU);
-extern void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState);
+extern void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState, microBlock** resolvedBlock = nullptr);
 _mVUt extern void* mVUcompileJIT(u32 startPC, uptr ptr);
 
 // Prototypes for Linux
@@ -331,7 +332,7 @@ mVUop(mVUopL);
 // Private Functions
 extern void mVUcacheProg(microVU& mVU, microProgram& prog);
 extern void mVUdeleteProg(microVU& mVU, microProgram*& prog);
-_mVUt extern void* mVUsearchProg(u32 startPC, uptr pState);
+_mVUt extern void* mVUsearchProg(u32 startPC, uptr pState, microBlock** resolvedBlock = nullptr);
 extern const u8* mVUstatusTable();
 extern void* g_mvuPreparedEntry[2];
 struct MvuCommunicationRequest
@@ -354,6 +355,7 @@ extern MvuCommunicationRequest g_mvuCommunicationRequest;
 extern MvuCommunicationHint g_mvuCommunicationHint[2];
 extern void* g_mvuCommunicationBody[2];
 extern void* g_mvuCommunicationHotBody[2];
+extern void* g_mvuCommunicationResidentBody[2];
 bool mVUrunCommunication(u32 unit, u32 cycles);
 void* mVUcommunicationNext(u32 unit);
 extern void* mVUexecuteVU0(u32 startPC, u32 cycles);
