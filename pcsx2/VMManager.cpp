@@ -15,6 +15,7 @@
 #include "GS.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GSDumpReplayer.h"
+#include "GS/GSCapture.h"
 #include "GameDatabase.h"
 #include "GameList.h"
 #include "Host.h"
@@ -187,6 +188,7 @@ static std::string s_elf_path;
 static std::pair<u32, u32> s_elf_text_range;
 static bool s_elf_executed = false;
 static std::string s_elf_override;
+static std::string s_game_settings_override;
 static std::string s_input_profile_name;
 static u32 s_cdvd_offset = 0;
 static u32 s_frame_advance_count = 0;
@@ -688,7 +690,12 @@ void VMManager::LoadCoreSettings(SettingsInterface& si)
 
 	// Force MTVU off when playing back GS dumps, it doesn't get used.
 	if (GSDumpReplayer::IsReplayingDump())
+	{
 		EmuConfig.Speedhacks.vuThread = false;
+		GSDumpReplayer::SetFrameRange(EmuConfig.GS.DumpReplayUseFrameRange,
+			EmuConfig.GS.DumpReplayFrameStart, EmuConfig.GS.DumpReplayFrameEnd);
+		GSDumpReplayer::SetLoopCount(EmuConfig.GS.DumpReplayLoopCount);
+	}
 }
 
 void VMManager::LoadInputBindings(SettingsInterface& si, std::unique_lock<std::mutex>& lock)
@@ -834,6 +841,10 @@ bool VMManager::ReloadGameSettings()
 
 std::string VMManager::GetGameSettingsPath(const std::string_view game_serial, u32 game_crc)
 {
+	// Game settings override via -gamecfg command line flag
+	if (!s_game_settings_override.empty())
+		return s_game_settings_override;
+
 	std::string sanitized_serial(Path::SanitizeFileName(game_serial));
 
 	return game_serial.empty() ?
@@ -1522,6 +1533,7 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 			GSDumpReplayer::Shutdown();
 
 		s_elf_override = {};
+		s_game_settings_override = {};
 		ClearELFInfo();
 		ClearDiscDetails();
 
@@ -1645,6 +1657,23 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 		return VMBootResult::StartupFailure;
 	}
 	ScopedGuard close_cdvd(&DoCDVDclose);
+
+	if (!boot_params.game_config.empty())
+	{
+		if (!StringUtil::compareNoCase(Path::GetExtension(boot_params.game_config), "ini"))
+		{
+			Error::SetStringFmt(error,
+				TRANSLATE_FS("VMManager", "Requested game config '{}' is not an INI file."), boot_params.game_config);
+			return VMBootResult::StartupFailure;
+		}
+		else if (!FileSystem::FileExists(boot_params.game_config.c_str()))
+		{
+			Error::SetStringFmt(error,
+				TRANSLATE_FS("VMManager", "Requested game config '{}' does not exist."), boot_params.game_config);
+			return VMBootResult::StartupFailure;
+		}
+		s_game_settings_override = boot_params.game_config;
+	}
 
 	// Figure out which game we're running! This also loads game settings.
 	UpdateDiscDetails(true);
@@ -1831,6 +1860,7 @@ VMBootResult VMManager::Initialize(const VMBootParameters& boot_params, Error* e
 	}
 
 	PerformanceMetrics::Clear();
+	MTGS::ResetStats();
 	return VMBootResult::StartupSuccess;
 }
 
@@ -1865,6 +1895,7 @@ void VMManager::Shutdown(bool save_resume_state)
 
 	SaveSessionTime(s_disc_serial);
 	s_elf_override = {};
+	s_game_settings_override = {};
 	ClearELFInfo();
 	CDVDsys_ClearFiles();
 
@@ -2091,7 +2122,7 @@ bool VMManager::DoLoadState(const char* filename, Error* error)
 		Error::SetString(error, TRANSLATE_STR("VMManager", "Cannot load state while replaying a GS dump."));
 		return false;
 	}
-
+	GSCapture::FlushAudioOnly();
 	Host::OnSaveStateLoading(filename);
 
 	if (!SaveState_UnzipFromDisk(filename, error))
