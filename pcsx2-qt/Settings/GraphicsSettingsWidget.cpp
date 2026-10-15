@@ -112,7 +112,7 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToIntSetting(
 		sif, m_hw.trilinearFiltering, "EmuCore/GS", "TriFilter", static_cast<int>(TriFiltering::Automatic), -1);
 	SettingWidgetBinder::BindWidgetToEnumSetting(sif, m_hw.anisotropicFiltering, "EmuCore/GS", "MaxAnisotropy",
-		s_anisotropic_filtering_entries, s_anisotropic_filtering_values, "0");
+		s_anisotropic_filtering_entries, s_anisotropic_filtering_values, "0", "GraphicsSettingsWidget");
 	SettingWidgetBinder::BindWidgetToIntSetting(sif, m_hw.dithering, "EmuCore/GS", "dithering_ps2", 2);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_hw.mipmapping, "EmuCore/GS", "hw_mipmap", true);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_hw.accurateAlphaTest, "EmuCore/GS", "HWAccurateAlphaTest", false);
@@ -160,6 +160,7 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_fixes.estimateTextureRegion, "EmuCore/GS", "UserHacks_EstimateTextureRegion", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_fixes.drawBuffering, "EmuCore/GS", "UserHacks_DrawBuffering", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_fixes.rewriteLargeSTCoords, "EmuCore/GS", "UserHacks_RewriteLargeSTCoords", false);
+	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_fixes.targetPageRearranging, "EmuCore/GS", "UserHacks_TargetPageRearranging", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_fixes.gpuPaletteConversion, "EmuCore/GS", "paltex", false);
 	connect(m_fixes.cpuSpriteRenderBW, &QComboBox::currentIndexChanged, this,
 		&GraphicsSettingsWidget::onCPUSpriteRenderBWChanged);
@@ -769,6 +770,9 @@ GraphicsSettingsWidget::GraphicsSettingsWidget(SettingsWindow* settings_dialog, 
 		
 		dialog()->registerWidgetHelp(m_fixes.rewriteLargeSTCoords, tr("Rewrite Large ST"), tr("Unchecked"),
 			tr("Rewrite large ST coordinates and clamp the values (mainly for Ridge Racer V and Destruction Derby Arena)."));
+
+		dialog()->registerWidgetHelp(m_fixes.targetPageRearranging, tr("Target Page Rearranging"), tr("Unchecked"),
+			tr("Rearranges memory pages of a target if the game changes the layout at that current VRAM address."));
 	}
 
 	// Upscaling Fixes tab
