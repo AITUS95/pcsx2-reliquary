@@ -128,7 +128,7 @@ bool Threading::ThreadHandle::SetAffinity(u64 processor_mask) const
 	if (processor_mask == 0)
 		processor_mask = ~processor_mask;
 
-	return (SetThreadAffinityMask(GetCurrentThread(), (DWORD_PTR)processor_mask) != 0 || GetLastError() != ERROR_SUCCESS);
+	return SetThreadAffinityMask(static_cast<HANDLE>(m_native_handle), static_cast<DWORD_PTR>(processor_mask)) != 0;
 }
 
 Threading::Thread::Thread() = default;

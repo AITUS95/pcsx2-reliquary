@@ -3922,7 +3922,7 @@ void VMManager::SetEmuThreadAffinities()
 	if (s_thread_affinities_set == new_pin_enable)
 		return;
 
-	s_thread_affinities_set = EmuConfig.EnableThreadPinning;
+	s_thread_affinities_set = new_pin_enable;
 
 	EnsureCPUInfoInitialized();
 
