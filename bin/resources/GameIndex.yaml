@@ -24136,6 +24136,7 @@ SLES-53585:
   compat: 3
   gameFixes:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
+    - VU1MaddiHack # Prevent floor-material flickering.
 SLES-53587:
   name: "Garfield - Saving Arlene"
   region: "PAL-M5"
@@ -32824,6 +32825,9 @@ SLKA-25311:
   name: "마블 네메시스"
   name-en: "Marvel Nemesis - Rise of the Imperfects"
   region: "NTSC-K"
+  gameFixes:
+    - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
+    - VU1MaddiHack # Prevent floor-material flickering.
 SLKA-25313:
   name: "NARUTO -나루토- 우즈마키 인전"
   name-sort: "Naruto - Uzumaki Injeon"
@@ -71519,6 +71523,7 @@ SLUS-21281:
   compat: 3
   gameFixes:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
+    - VU1MaddiHack # Prevent floor-material flickering.
 SLUS-21282:
   name: "007 - From Russia with Love"
   region: "NTSC-U"
@@ -76136,6 +76141,9 @@ SLUS-29155:
 SLUS-29156:
   name: "Marvel Nemesis - Rise of the Imperfects [Demo]"
   region: "NTSC-U"
+  gameFixes:
+    - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
+    - VU1MaddiHack # Prevent floor-material flickering.
 SLUS-29157:
   name: "Dragon Quest VIII - Journey of the Cursed King [Demo]"
   region: "NTSC-U"
