@@ -311,7 +311,7 @@ __fi void vif1STAT(u32 value)
 _vifT __fi u32 vifRead32(u32 mem)
 {
 	vifStruct& vif = MTVU_VifX;
-	bool wait = idx && THREAD_VU1;
+	bool wait = idx && MTVU_ASYNC;
 
 	switch (mem)
 	{

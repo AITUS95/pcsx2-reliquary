@@ -6050,7 +6050,7 @@ void FullscreenUI::DrawGameFixesSettingsPage()
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_ARROWS_ROTATE, "Full VU0 Synchronization"), FSUI_CSTR("Forces tight VU0 sync on every COP2 instruction."),
 		"EmuCore/Gamefixes", "FullVU0SyncHack", false);
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_ARROWS_ROTATE, "VU Communication Synchronization"),
-		FSUI_CSTR("Preserves communication boundaries between the EE and both VUs. Disables MTVU, Instant VU1, and EE cycle rate/skip. May significantly reduce performance."),
+		FSUI_CSTR("Preserves communication boundaries between the EE and both VUs. Synchronizes MTVU at communication boundaries. Disables Instant VU1 and EE cycle rate/skip. May significantly reduce performance."),
 		"EmuCore/Gamefixes", "VUCommunicationHack", false);
 	DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_MICROCHIP, "VU1 MADDi Precision"),
 		FSUI_CSTR("Uses precise VU1 MADDi arithmetic in the interpreter and recompiler. Can reduce floor-material flickering in Marvel Nemesis. Other instructions retain their configured arithmetic."),

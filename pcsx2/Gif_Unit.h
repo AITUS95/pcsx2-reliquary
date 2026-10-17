@@ -260,7 +260,7 @@ struct Gif_Path
 		gsPack.Reset();
 	}
 
-	bool isMTVU() const { return !idx && THREAD_VU1; }
+	bool isMTVU() const { return !idx && MTVU_ASYNC; }
 	s32 getReadAmount() { return readAmount.load(std::memory_order_acquire) + gsPack.readAmount; }
 	bool hasDataRemaining() const { return curOffset < curSize; }
 	bool isDone() const { return isMTVU() ? !mtvu.fakePackets : (!hasDataRemaining() && (state == GIF_PATH_IDLE || state == GIF_PATH_WAIT)); }
@@ -626,7 +626,7 @@ struct Gif_Unit
 	u32 TransferGSPacketData(GIF_TRANSFER_TYPE tranType, u8* pMem, u32 size, bool aligned = false)
 	{
 
-		if (THREAD_VU1)
+		if (MTVU_ASYNC)
 		{
 			Gif_Path& path1 = gifPath[GIF_PATH_1];
 			if (tranType == GIF_TRANS_XGKICK)

@@ -595,6 +595,9 @@ int GSRendererPGS::Defrost(freezeData* data)
 		read_data(ptr, &gif_path.tag, sizeof(gif_path.tag));
 		gif_path.loop = 0;
 		read_reg(ptr, gif_path.reg);
+		// Communication state must resume with the saved GIF packet position.
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+			iface.get_gif_path(i) = gif_path;
 	}
 
 	// internal_Q

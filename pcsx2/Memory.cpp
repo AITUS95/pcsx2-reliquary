@@ -821,7 +821,8 @@ template<int vunum> static void vuMicroWrite8(u32 addr,mem8_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
 
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteMicroMem(addr, &data, sizeof(u8));
 		return;
 	}
@@ -834,7 +835,8 @@ template<int vunum> static void vuMicroWrite16(u32 addr, mem16_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
 
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteMicroMem(addr, &data, sizeof(u16));
 		return;
 	}
@@ -847,7 +849,8 @@ template<int vunum> static void vuMicroWrite32(u32 addr, mem32_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
 
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteMicroMem(addr, &data, sizeof(u32));
 		return;
 	}
@@ -860,7 +863,8 @@ template<int vunum> static void vuMicroWrite64(u32 addr, mem64_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
 
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteMicroMem(addr, &data, sizeof(u64));
 		return;
 	}
@@ -876,7 +880,8 @@ template<int vunum> static void TAKES_R128 vuMicroWrite128(u32 addr, r128 data) 
 
 	const u128 udata = r128_to_u128(data);
 
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteMicroMem(addr, &udata, sizeof(u128));
 		return;
 	}
@@ -922,7 +927,8 @@ template<int vunum> static RETURNS_R128 vuDataRead128(u32 addr) {
 template<int vunum> static void vuDataWrite8(u32 addr, mem8_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteDataMem(addr, &data, sizeof(u8));
 		return;
 	}
@@ -931,7 +937,8 @@ template<int vunum> static void vuDataWrite8(u32 addr, mem8_t data) {
 template<int vunum> static void vuDataWrite16(u32 addr, mem16_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteDataMem(addr, &data, sizeof(u16));
 		return;
 	}
@@ -940,7 +947,8 @@ template<int vunum> static void vuDataWrite16(u32 addr, mem16_t data) {
 template<int vunum> static void vuDataWrite32(u32 addr, mem32_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteDataMem(addr, &data, sizeof(u32));
 		return;
 	}
@@ -949,7 +957,8 @@ template<int vunum> static void vuDataWrite32(u32 addr, mem32_t data) {
 template<int vunum> static void vuDataWrite64(u32 addr, mem64_t data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		vu1Thread.WriteDataMem(addr, &data, sizeof(u64));
 		return;
 	}
@@ -958,7 +967,8 @@ template<int vunum> static void vuDataWrite64(u32 addr, mem64_t data) {
 template<int vunum> static void TAKES_R128 vuDataWrite128(u32 addr, r128 data) {
 	VURegs* vu = vunum ?  &VU1 :  &VU0;
 	addr      &= vunum ? 0x3fff: 0xfff;
-	if (vunum && THREAD_VU1) {
+	if (vunum && MTVU_ASYNC)
+	{
 		alignas(16) const u128 udata = r128_to_u128(data);
 		vu1Thread.WriteDataMem(addr, &udata, sizeof(u128));
 		return;

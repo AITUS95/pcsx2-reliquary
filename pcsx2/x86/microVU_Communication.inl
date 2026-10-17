@@ -86,8 +86,6 @@ static void mVUemitCommunicationDispatch(microVU& mVU, std::vector<xForwardJump3
 		xMOV(ptr32[&r.runCycles], ecx);
 		xMOV(ptr32[&next.cycles], 0);
 		xMOV(ptr32[&next.totalCycles], ecx);
-		xMOV(r8, ptrNative[&next.prog.x86ptr]);
-		xMOV(ptrNative[&x86Ptr], r8);
 		pxAssert(microVU0.textPtr() == microVU1.textPtr());
 #ifdef mVUprofileProg
 		// Opcode profiling always calls host cleanup, which can clobber xmmPQ.

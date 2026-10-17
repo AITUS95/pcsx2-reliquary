@@ -1598,6 +1598,11 @@ namespace EmuFolders
 #define THREAD_VU1 false
 #define REC_VU1 false
 #endif
+// Worker lifetime is independent of the legacy whole-program queue protocol.
+// Communication mode admits canonical quanta on the worker instead of running
+// ahead with shadow VIF state and deferred VU/GIF completion.
+#define MTVU_ASYNC (THREAD_VU1 && !EmuConfig.Gamefixes.VUCommunicationHack)
+#define MTVU_COMMUNICATION (THREAD_VU1 && EmuConfig.Gamefixes.VUCommunicationHack)
 #define INSTANT_VU1 (EmuConfig.Speedhacks.vu1Instant)
 #define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE)
 #define CHECK_CACHE (EmuConfig.Cpu.Recompiler.EnableEECache)

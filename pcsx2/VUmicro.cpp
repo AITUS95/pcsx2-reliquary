@@ -34,7 +34,20 @@ bool vuRunInterleaved(u32 unit, u32 cycles)
 	if (!EmuConfig.Gamefixes.VUCommunicationHack)
 		return false;
 
-	pxAssert(!THREAD_VU1);
+	pxAssert(!MTVU_ASYNC);
+	if (MTVU_COMMUNICATION && !VU_Thread::IsCommunicationWorker())
+	{
+		// Keep the coupled VU0/VU1 domain beside EE/COP2. With VU0 idle,
+		// a VU1 request has no VU0 pair to admit and can use the worker.
+		// Small requests stay local to amortize host ownership transfer;
+		// their guest budget and pair admission are unchanged.
+		if (unit == 1 && vu1Thread.ShouldOffloadCommunication(cycles) && !(VU0.VI[REG_VPU_STAT].UL & 1))
+		{
+			vu1Thread.ExecuteCommunication(unit, cycles);
+			return true;
+		}
+		pxAssert(vu1Thread.IsDone());
+	}
 #ifdef _M_X86
 	if (mVUrunCommunication(unit, cycles))
 		return true;
@@ -68,7 +81,7 @@ __inline u32 CalculateMinRunCycles(u32 cycles, bool requiresAccurateCycles)
 		return std::max(1U, cycles);
 	// If we're running an interlocked COP2 operation
 	// run for an exact amount of cycles
-	if(requiresAccurateCycles)
+	if (requiresAccurateCycles)
 		return cycles;
 
 	// Allow a minimum of 16 cycles to avoid running small blocks
@@ -83,7 +96,7 @@ void BaseVUmicroCPU::ExecuteBlock(bool startUp)
 	const u32& stat = VU0.VI[REG_VPU_STAT].UL;
 	const int test = m_Idx ? 0x100 : 1;
 
-	if (m_Idx && THREAD_VU1)
+	if (m_Idx && MTVU_ASYNC)
 	{
 		vu1Thread.Get_MTVUChanges();
 		return;

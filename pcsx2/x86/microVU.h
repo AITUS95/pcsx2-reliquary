@@ -183,13 +183,13 @@ struct microVU
 	VURegs& regs() const { return ::vuRegs[index]; }
 	u32* macFlags() { return EmuConfig.Gamefixes.VUCommunicationHack && !cop2 ? regs().micro_macflags : macFlag; }
 	u32* clipFlags() { return EmuConfig.Gamefixes.VUCommunicationHack && !cop2 ? regs().micro_clipflags : clipFlag; }
-	void* textPtr() const { return (index && THREAD_VU1) ? (void*)&regs().VF[9] : (void*)R5900_TEXTPTR; }
+	void* textPtr() const { return (index && MTVU_ASYNC) ? (void*)&regs().VF[9] : (void*)R5900_TEXTPTR; }
 
 	__fi REG_VI& getVI(uint reg) const { return regs().VI[reg]; }
 	__fi VECTOR& getVF(uint reg) const { return regs().VF[reg]; }
 	__fi VIFregisters& getVifRegs() const
 	{
-		return (index && THREAD_VU1) ? vu1Thread.vifRegs : regs().GetVifRegs();
+		return (index && MTVU_ASYNC) ? vu1Thread.vifRegs : regs().GetVifRegs();
 	}
 
 	__fi u32 compareState(microRegInfo* lhs, microRegInfo* rhs) const {
