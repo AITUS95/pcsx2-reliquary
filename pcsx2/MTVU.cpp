@@ -36,7 +36,6 @@ static __fi void CommunicationPause(u32& spins)
 enum MTVU_EVENT
 {
 	MTVU_VU_EXECUTE, // Execute VU program
-	MTVU_VU_COMMUNICATION, // Execute one caller-bounded communication request
 	MTVU_VU_WRITE_MICRO, // Write to VU micro-mem
 	MTVU_VU_WRITE_DATA, // Write to VU data-mem
 	MTVU_VU_WRITE_VIREGS, // Write to VU registers
@@ -45,7 +44,8 @@ enum MTVU_EVENT
 	MTVU_VIF_WRITE_ROW, // Write to Vif row reg
 	MTVU_VIF_UNPACK, // Execute Vif Unpack
 	MTVU_NULL_PACKET, // Go back to beginning of buffer
-	MTVU_RESET
+	MTVU_RESET,
+	MTVU_VU_COMMUNICATION // Execute one caller-bounded communication request
 };
 
 // Calls the vif unpack functions from the MTVU thread
@@ -466,7 +466,7 @@ void VU_Thread::KickStart()
 bool VU_Thread::IsDone()
 {
 	return GetReadPos() == GetWritePos() &&
-	       m_communication_job.pending.load(std::memory_order_acquire) == 0;
+	       (!MTVU_COMMUNICATION || m_communication_job.pending.load(std::memory_order_acquire) == 0);
 }
 
 void VU_Thread::WaitVU()
