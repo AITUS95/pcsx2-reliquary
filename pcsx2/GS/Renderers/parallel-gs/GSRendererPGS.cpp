@@ -590,7 +590,7 @@ int GSRendererPGS::Defrost(freezeData* data)
 	// 4 GIF paths
 	for (int i = 0; i < 4; i++)
 	{
-		auto gif_path = iface.get_gif_path(i);
+		auto& gif_path = iface.get_gif_path(i);
 		gif_path.tag.NLOOP -= gif_path.loop;
 		read_data(ptr, &gif_path.tag, sizeof(gif_path.tag));
 		gif_path.loop = 0;
