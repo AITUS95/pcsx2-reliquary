@@ -82,7 +82,7 @@ void mVUreset(microVU& mVU)
 		if (!mVU.softRsqrtCache)
 			mVU.softRsqrtCache = std::make_unique<microVUSoftLowerCacheSet[]>(mVUsoftLowerCacheSize);
 	}
-	if (THREAD_VU1)
+	if (MTVU_ASYNC)
 	{
 		DevCon.Warning("mVU Reset");
 		// If MTVU is toggled on during gameplay we need to flush the running VU1 program, else it gets in a mess
@@ -516,7 +516,8 @@ bool mVUrunCommunication(u32 unit, u32 cycles)
 	if (!EmuConfig.Gamefixes.VUCommunicationHack ||
 		!EmuConfig.Cpu.Recompiler.EnableVU0 || !EmuConfig.Cpu.Recompiler.EnableVU1)
 		return false;
-	pxAssert(!THREAD_VU1 && !g_mvuCommunicationRequest.active);
+	pxAssert(!MTVU_ASYNC && !g_mvuCommunicationRequest.active);
+	pxAssert(!MTVU_COMMUNICATION || VU_Thread::IsCommunicationWorker() || vu1Thread.IsDone());
 	auto& r = g_mvuCommunicationRequest;
 	r = {};
 	r.active = 1;
@@ -537,6 +538,7 @@ bool mVUrunCommunication(u32 unit, u32 cycles)
 
 static void mVUexecuteQuantum(microVU& mVU)
 {
+	pxAssert(!g_mvuCommunicationRequest.active);
 	VURegs& vu = mVU.regs();
 	const u32 pc = (vu.VI[REG_TPC].UL << 3) & (mVU.microMemSize - 8);
 	const microRegInfo entry = mVU.prog.lpState;
@@ -609,9 +611,20 @@ void recMicroVU1::Step()
 
 void recMicroVU1::Execute(u32 cycles)
 {
+	if (MTVU_COMMUNICATION && !VU_Thread::IsCommunicationWorker() &&
+		cycles >= VU_Thread::CommunicationOffloadMinCycles && !(VU0.VI[REG_VPU_STAT].UL & 1))
+	{
+		// A large caller budget can still finish a tiny microprogram. Learn
+		// from completed work, without altering this request or its admission.
+		const u64 before = VU1.cycle;
+		[[maybe_unused]] const bool handled = vuRunInterleaved(1, cycles);
+		pxAssert(handled && VU1.cycle >= before);
+		vu1Thread.RecordCommunicationWork(VU1.cycle - before);
+		return;
+	}
 	if (vuRunInterleaved(1, cycles))
 		return;
-	if (!THREAD_VU1)
+	if (!MTVU_ASYNC)
 	{
 		if (!(VU0.VI[REG_VPU_STAT].UL & 0x100))
 			return;
@@ -619,7 +632,7 @@ void recMicroVU1::Execute(u32 cycles)
 	VU1.VI[REG_TPC].UL <<= 3;
 	((mVUrecCall)microVU1.startFunct)(VU1.VI[REG_TPC].UL, cycles);
 	VU1.VI[REG_TPC].UL >>= 3;
-	if (microVU1.regs().flags & 0x4 && !THREAD_VU1)
+	if (microVU1.regs().flags & 0x4 && !MTVU_ASYNC)
 	{
 		microVU1.regs().flags &= ~0x4;
 		hwIntcIrq(7);

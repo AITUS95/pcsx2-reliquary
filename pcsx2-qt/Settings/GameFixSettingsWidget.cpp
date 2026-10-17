@@ -58,7 +58,7 @@ GameFixSettingsWidget::GameFixSettingsWidget(SettingsWindow* settings_dialog, QW
 	dialog()->registerWidgetHelp(m_ui.XgKickHack, tr("VU XGKick Sync"), tr("Unchecked"), tr("Use accurate timing for VU XGKicks (slower)."));
 	dialog()->registerWidgetHelp(m_ui.BlitInternalFPSHack, tr("Force Blit Internal FPS Detection"), tr("Unchecked"), tr("Use alternative method to calculate internal FPS to avoid false readings in some games."));
 	dialog()->registerWidgetHelp(m_ui.VUCommunicationHack, tr("VU Communication Synchronization"), tr("Unchecked"),
-		tr("Preserves communication boundaries between the EE and both VUs. Disables MTVU, Instant VU1, and EE cycle rate/skip. May significantly reduce performance."));
+		tr("Preserves communication boundaries between the EE and both VUs. Synchronizes MTVU at communication boundaries. Disables Instant VU1 and EE cycle rate/skip. May significantly reduce performance."));
 	dialog()->registerWidgetHelp(m_ui.VU1MaddiHack, tr("VU1 MADDi Precision"), tr("Unchecked"),
 		tr("Uses precise VU1 MADDi arithmetic in the interpreter and recompiler. Can reduce floor-material flickering in Marvel Nemesis. Other instructions retain their configured arithmetic."));
 	dialog()->registerWidgetHelp(m_ui.MixSpdifAnalogHack, tr("Mix SPDIF and Analogue Audio output"), tr("Unchecked"),

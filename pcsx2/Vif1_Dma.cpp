@@ -222,7 +222,7 @@ __fi void vif1VUFinish()
 	if (vif1CpuFifoEnabled())
 		vif1CpuFifoDrain();
 	// Sync up VU1 so we don't errantly wait.
-	while (!THREAD_VU1 && (VU0.VI[REG_VPU_STAT].UL & 0x100))
+	while (!MTVU_ASYNC && (VU0.VI[REG_VPU_STAT].UL & 0x100))
 	{
 		const s64 cycle_diff = static_cast<int>(cpuRegs.cycle - VU1.cycle);
 
@@ -236,7 +236,7 @@ __fi void vif1VUFinish()
 	{
 		vu1Thread.Get_MTVUChanges();
 
-		if (THREAD_VU1 && !INSTANT_VU1 && (VU0.VI[REG_VPU_STAT].UL & 0x100))
+		if (MTVU_ASYNC && !INSTANT_VU1 && (VU0.VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles(VU_MTVU_BUSY));
 		else
 			CPU_INT(VIF_VU1_FINISH, 128);
@@ -249,7 +249,7 @@ __fi void vif1VUFinish()
 		u64 _cycles = VU1.cycle;
 		//DevCon.Warning("Finishing VU1");
 		vu1Finish(false);
-		if (THREAD_VU1 && !INSTANT_VU1 && (VU0.VI[REG_VPU_STAT].UL & 0x100))
+		if (MTVU_ASYNC && !INSTANT_VU1 && (VU0.VI[REG_VPU_STAT].UL & 0x100))
 			CPU_INT(VIF_VU1_FINISH, cpuGetCycles(VU_MTVU_BUSY));
 		else
 			CPU_INT(VIF_VU1_FINISH, VU1.cycle - _cycles);

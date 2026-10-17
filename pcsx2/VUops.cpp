@@ -2263,7 +2263,7 @@ static __ri void _vuXITOP(VURegs* VU)
 	if (_It_ == 0)
 		return;
 
-	if (VU == &VU1 && THREAD_VU1)
+	if (VU == &VU1 && MTVU_ASYNC)
 		VU->VI[_It_].US[0] = vu1Thread.vifRegs.itop;
 	else
 		VU->VI[_It_].US[0] = VU->GetVifRegs().itop;
@@ -2316,7 +2316,7 @@ void _vuXGKICKTransfer(s32 cycles, bool flush)
 
 		// Would be "nicer" to do the copy until it's all up, however this really screws up PATH3 masking stuff
 		// So lets just do it the other way :)
-		/*if (THREAD_VU1)
+		/*if (MTVU_ASYNC)
 		{
 			if ((transfersize * 0x10) < VU1.xgkicksizeremaining)
 				gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&VU1.Mem[VU1.xgkickaddr], transfersize * 0x10, true);
@@ -2325,7 +2325,7 @@ void _vuXGKICKTransfer(s32 cycles, bool flush)
 		}
 		else*/
 		//{
-			gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize * 0x10, true);
+		gifUnit.TransferGSPacketData(GIF_TRANS_XGKICK, &vuRegs[1].Mem[VU1.xgkickaddr], transfersize * 0x10, true);
 		//}
 
 		if ((VU0.VI[REG_VPU_STAT].UL & 0x100) && flush)
@@ -2386,7 +2386,7 @@ static __ri void _vuXTOP(VURegs* VU)
 	if (_It_ == 0)
 		return;
 
-	if (VU == &VU1 && THREAD_VU1)
+	if (VU == &VU1 && MTVU_ASYNC)
 		VU->VI[_It_].US[0] = (u16)vu1Thread.vifRegs.top;
 	else
 		VU->VI[_It_].US[0] = (u16)VU->GetVifRegs().top;

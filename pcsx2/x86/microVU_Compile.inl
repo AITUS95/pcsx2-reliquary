@@ -581,12 +581,12 @@ __fi void mVUinitFirstPass(microVU& mVU, uptr pState, u8* thisPtr)
 
 void mVUDoDBit(microVU& mVU, microFlagCycles* mFC)
 {
-	if (mVU.index && THREAD_VU1)
+	if (mVU.index && MTVU_ASYNC)
 		xTEST(ptr32[&vu1Thread.vuFBRST], (isVU1 ? 0x400 : 0x4));
 	else
 		xTEST(ptr32[&VU0.VI[REG_FBRST].UL], (isVU1 ? 0x400 : 0x4));
 	xForwardJump32 eJMP(Jcc_Zero);
-	if (!isVU1 || !THREAD_VU1)
+	if (!isVU1 || !MTVU_ASYNC)
 	{
 		xOR(ptr32[&VU0.VI[REG_VPU_STAT].UL], (isVU1 ? 0x200 : 0x2));
 		xOR(ptr32[&mVU.regs().flags], VUFLAG_INTCINTERRUPT);
@@ -599,12 +599,12 @@ void mVUDoDBit(microVU& mVU, microFlagCycles* mFC)
 
 void mVUDoTBit(microVU& mVU, microFlagCycles* mFC)
 {
-	if (mVU.index && THREAD_VU1)
+	if (mVU.index && MTVU_ASYNC)
 		xTEST(ptr32[&vu1Thread.vuFBRST], (isVU1 ? 0x800 : 0x8));
 	else
 		xTEST(ptr32[&VU0.VI[REG_FBRST].UL], (isVU1 ? 0x800 : 0x8));
 	xForwardJump32 eJMP(Jcc_Zero);
-	if (!isVU1 || !THREAD_VU1)
+	if (!isVU1 || !MTVU_ASYNC)
 	{
 		xOR(ptr32[&VU0.VI[REG_VPU_STAT].UL], (isVU1 ? 0x400 : 0x4));
 		xOR(ptr32[&mVU.regs().flags], VUFLAG_INTCINTERRUPT);
@@ -1069,6 +1069,8 @@ void* mVUcompile(microVU& mVU, u32 startPC, uptr pState)
 	mVUendProgram(mVU, &mFC, 1);
 
 perf_and_return:
+	if (EmuConfig.Gamefixes.VUCommunicationHack)
+		mVU.prog.x86ptr = xGetPtr();
 
 	if (mVU.regs().start_pc == startPC)
 	{
@@ -1121,6 +1123,11 @@ __fi void* mVUblockFetch(microVU& mVU, u32 startPC, uptr pState, microBlock** re
 // mVUcompileJIT() - Called By JR/JALR during execution
 _mVUt void* mVUcompileJIT(u32 startPC, uptr ptr)
 {
+	if (EmuConfig.Gamefixes.VUCommunicationHack)
+	{
+		xSetTextPtr(mVUx.textPtr());
+		xSetPtr(mVUx.prog.x86ptr);
+	}
 	if (doJumpAsSameProgram) // Treat jump as part of same microProgram
 	{
 		if (doJumpCaching) // When doJumpCaching, ptr is a microBlock pointer

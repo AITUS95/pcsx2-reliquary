@@ -309,8 +309,8 @@ __fi void mVUaddrFix(mV, const xAddressReg& gprReg, const xAddressReg& tmpReg)
 			xAND(xRegister32(gprReg.Id), 0xff); // if !(addr & 0x4000), wrap around
 			xForwardJump32 jmpB;
 		jmpA.SetTarget();
-			if (THREAD_VU1)
-			{
+		if (MTVU_ASYNC)
+		{
 #if 0
 					if (IsDevBuild && !isCOP2) // Lets see which games do this!
 					{
@@ -322,7 +322,7 @@ __fi void mVUaddrFix(mV, const xAddressReg& gprReg, const xAddressReg& tmpReg)
 					}
 #endif
 				xFastCall((void*)mVU.waitMTVU);
-			}
+		}
 			xAND(xRegister32(gprReg.Id), 0x3f); // ToDo: theres a potential problem if VU0 overrides VU1's VF0/VI0 regs!
 			sptr offset = (u128*)VU1.VF - (u128*)VU0.Mem;
 			if (offset == (s32)offset)

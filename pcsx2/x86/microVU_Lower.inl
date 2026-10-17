@@ -2449,7 +2449,7 @@ mVUop(mVU_SQI)
 	pass1
 	{
 		mVUanalyzeSQ(mVU, _Fs_, _It_, true);
-		mVUlow.deferXgkickSync = isVU1 && !THREAD_VU1 && _It_ != 0;
+		mVUlow.deferXgkickSync = isVU1 && !MTVU_ASYNC && _It_ != 0;
 	}
 	pass2
 	{
@@ -2740,7 +2740,7 @@ void _vuXGKICKTransfermVU(bool flush)
 
 		// Would be "nicer" to do the copy until it's all up, however this really screws up PATH3 masking stuff
 		// So lets just do it the other way :)
-		if (THREAD_VU1)
+		if (MTVU_ASYNC)
 		{
 			if (transfersize < VU1.xgkicksizeremaining)
 				gifUnit.gifPath[GIF_PATH_1].CopyGSPacketData(&VU1.Mem[VU1.xgkickaddr], transfersize, true);
@@ -2812,7 +2812,7 @@ static __fi void mVU_XGKICK_SYNC(mV, bool flush)
 	xCMP(ptr32[&VU1.xgkickcyclecount], 2);
 	xForwardJL32 needcycles;
 
-	if (THREAD_VU1)
+	if (MTVU_ASYNC)
 	{
 		mVUbackupRegs(mVU, true, true);
 		xFastCall(_vuXGKICKTransfermVU, false);
@@ -3005,7 +3005,7 @@ mVUop(mVU_XGKICK)
 			xMOV(ptr32[&VU1.xgkickaddr], gprT1);
 		}
 		mVU.regAlloc->clearNeeded(regS);
-		if (CHECK_XGKICKHACK && !THREAD_VU1)
+		if (CHECK_XGKICKHACK && !MTVU_ASYNC)
 		{
 			mVU.regAlloc->flushCallerSavedRegisters();
 			mVUbackupRegs(mVU, true, true);

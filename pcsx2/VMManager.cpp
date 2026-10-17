@@ -757,7 +757,6 @@ void VMManager::ApplyGameFixes()
 	const auto enforce_communication_options = [] {
 		if (!EmuConfig.Gamefixes.VUCommunicationHack)
 			return;
-		EmuConfig.Speedhacks.vuThread = false;
 		EmuConfig.Speedhacks.vu1Instant = false;
 		EmuConfig.Speedhacks.EECycleRate = 0;
 		EmuConfig.Speedhacks.EECycleSkip = 0;

@@ -217,7 +217,7 @@ bool SaveStateBase::gifPathFreeze(u32 path)
 
 bool SaveStateBase::gifFreeze()
 {
-	bool mtvuMode = THREAD_VU1;
+	bool mtvuMode = MTVU_ASYNC;
 	pxAssert(vu1Thread.IsDone());
 	MTGS::WaitGS();
 	if (!FreezeTag("Gif Unit"))
@@ -233,7 +233,7 @@ bool SaveStateBase::gifFreeze()
 	gifPathFreeze(GIF_PATH_3);
 	if (!IsSaving())
 	{
-		if (mtvuMode != THREAD_VU1)
+		if (mtvuMode != MTVU_ASYNC)
 		{
 			DevCon.Warning("gifUnit: MTVU Mode has switched between save/load state");
 			// ToDo: gifUnit.SwitchMTVU(mtvuMode);
