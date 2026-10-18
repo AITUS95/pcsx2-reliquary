@@ -127,6 +127,11 @@ void VU_Thread::Close()
 		return;
 
 	m_communication_exit.store(true, std::memory_order_release);
+	if (m_communication_active.load(std::memory_order_acquire))
+	{
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
+	}
 	m_shutdown_flag.store(true, std::memory_order_release);
 	semaEvent.NotifyOfWork();
 	m_thread.Join();
@@ -142,6 +147,7 @@ void VU_Thread::Reset()
 	pxAssert(!m_communication_active.load(std::memory_order_relaxed));
 	m_communication_job.pending.store(0, std::memory_order_relaxed);
 	m_communication_exit.store(false, std::memory_order_relaxed);
+	m_communication_wakeup.store(0, std::memory_order_relaxed);
 	m_communication_last_long = true;
 	std::memset(&vif, 0, sizeof(vif));
 	std::memset(&vifRegs, 0, sizeof(vifRegs));
@@ -476,6 +482,8 @@ void VU_Thread::WaitVU()
 	if (m_communication_active.load(std::memory_order_acquire))
 	{
 		m_communication_exit.store(true, std::memory_order_release);
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
 		u32 spins = 0;
 		while (m_communication_active.load(std::memory_order_acquire))
 			CommunicationPause(spins);
@@ -517,6 +525,7 @@ bool VU_Thread::IsCommunicationWorker()
 void VU_Thread::ExecuteCommunicationJobs()
 {
 	u32 spins = 0;
+	const bool sleep_when_idle = !EmuConfig.EnableThreadPinning;
 	m_communication_active.store(true, std::memory_order_release);
 	for (;;)
 	{
@@ -535,6 +544,16 @@ void VU_Thread::ExecuteCommunicationJobs()
 		}
 		else if (m_communication_exit.load(std::memory_order_acquire))
 			break;
+		else if (sleep_when_idle && spins >= 4096)
+		{
+			// Recheck after capturing the generation so publication before
+			// wait cannot lose a wake. Exit uses the same independent wake.
+			const u32 wakeup = m_communication_wakeup.load(std::memory_order_acquire);
+			if (!m_communication_job.pending.load(std::memory_order_acquire) &&
+				!m_communication_exit.load(std::memory_order_acquire))
+				m_communication_wakeup.wait(wakeup, std::memory_order_acquire);
+			spins = 0;
+		}
 		else
 			CommunicationPause(spins);
 	}
@@ -561,6 +580,11 @@ void VU_Thread::ExecuteCommunication(u32 unit, u32 cycles)
 	m_communication_job.unit = unit;
 	m_communication_job.cycles = cycles;
 	m_communication_job.pending.store(1, std::memory_order_release);
+	if (!EmuConfig.EnableThreadPinning)
+	{
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
+	}
 	while (m_communication_job.pending.load(std::memory_order_acquire))
 		CommunicationPause(spins);
 }

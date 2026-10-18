@@ -32,6 +32,7 @@ class VU_Thread final {
 	CommunicationJob m_communication_job;
 	alignas(__cachelinesize) std::atomic<bool> m_communication_active{false};
 	std::atomic<bool> m_communication_exit{false};
+	std::atomic<u32> m_communication_wakeup{0};
 	alignas(__cachelinesize) bool m_communication_last_long = true; // EE-owned host placement estimate.
 	alignas(__cachelinesize) int m_read_pos; // temporary read pos (local to the VU thread)
 	int m_write_pos; // temporary write pos (local to the EE thread)
