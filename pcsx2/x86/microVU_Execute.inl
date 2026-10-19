@@ -25,6 +25,27 @@ static bool mvuNeedsFPCRUpdate(mV)
 	return EmuConfig.Cpu.FPUFPCR.bitmask != (isVU0 ? EmuConfig.Cpu.VU0FPCR.bitmask : EmuConfig.Cpu.VU1FPCR.bitmask);
 }
 
+// Import the canonical register instances after a host lookup or a VU handoff.
+static void mVUemitCommunicationRegisterImport(mV)
+{
+	xMOVDZX(xmmPQ, ptr32[&mVU.regs().VI[REG_Q].UL]);
+	xMOVDZX(xmmT1, ptr32[&mVU.regs().pending_q]);
+	xUNPCK.LPS(xmmPQ, xmmT1);
+	xMOVDZX(xmmT1, ptr32[&mVU.regs().VI[REG_P].UL]);
+	if (isVU1)
+	{
+		xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
+		xUNPCK.LPS(xmmT1, xmmT2);
+	}
+	else
+		xSHUF.PS(xmmT1, xmmT1, 0);
+	xMOVLH.PS(xmmPQ, xmmT1);
+	xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
+	xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
+	xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
+	xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
+}
+
 #include "microVU_Communication.inl"
 
 // Generates the code for entering/exit recompiled blocks
@@ -83,35 +104,15 @@ void mVUdispatcherAB(mV)
 		else
 			xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
 
-		if (EmuConfig.Gamefixes.VUCommunicationHack)
-			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
 		// Soft-float keeps the PS2 truncate/DAZ/FTZ mode for the whole VU
 		// dispatch, avoiding serializing mode changes around each arithmetic op.
 		if (mvuNeedsFPCRUpdate(mVU))
 			xLDMXCSR(ptr32[CHECK_VU_SOFT(mVU.index) ? &s_vu_soft_truncate_daz_ftz_mxcsr :
 				(isVU0 ? &EmuConfig.Cpu.VU0FPCR.bitmask : &EmuConfig.Cpu.VU1FPCR.bitmask)]);
 
-		// A native transition between two soft-float VUs keeps the identical
-		// execution mode. Every host callback and the EE return restore EE mode.
-		if (shared_soft_mode)
-			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
-
 		// Load the same active/future Q/P lanes without whole VI-vector loads.
 		if (EmuConfig.Gamefixes.VUCommunicationHack)
-		{
-			xMOVDZX(xmmPQ, ptr32[&mVU.regs().VI[REG_Q].UL]);
-			xMOVDZX(xmmT1, ptr32[&mVU.regs().pending_q]);
-			xUNPCK.LPS(xmmPQ, xmmT1);
-			xMOVDZX(xmmT1, ptr32[&mVU.regs().VI[REG_P].UL]);
-			if (isVU1)
-			{
-				xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
-				xUNPCK.LPS(xmmT1, xmmT2);
-			}
-			else
-				xSHUF.PS(xmmT1, xmmT1, 0);
-			xMOVLH.PS(xmmPQ, xmmT1);
-		}
+			mVUemitCommunicationRegisterImport(mVU);
 		else
 		{
 			xMOVAPS(xmmT1, ptr128[&mVU.regs().VI[REG_P].UL]);
@@ -139,17 +140,11 @@ void mVUdispatcherAB(mV)
 			xMOVAPS(ptr128[mVU.macFlags()], xmmT1);
 			xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_clipflags]);
 			xMOVAPS(ptr128[mVU.clipFlags()], xmmT1);
+			xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
+			xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
+			xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
+			xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
 		}
-
-		xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
-		xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
-		xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
-		xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
-
-		// Same-unit native dispatch keeps these canonical STATUS/PQ registers
-		// live. Cross-unit dispatch and every host lookup still reload them.
-		if (EmuConfig.Gamefixes.VUCommunicationHack)
-			g_mvuCommunicationResidentBody[mVU.index] = xGetPtr();
 
 		// Jump to Recompiled Code Block
 		xJMP(rax);

@@ -13,8 +13,6 @@ void* g_mvuPreparedEntry[2] = {};
 MvuCommunicationRequest g_mvuCommunicationRequest;
 MvuCommunicationHint g_mvuCommunicationHint[2];
 void* g_mvuCommunicationBody[2] = {};
-void* g_mvuCommunicationHotBody[2] = {};
-void* g_mvuCommunicationResidentBody[2] = {};
 
 const u8* mVUstatusTable()
 {
@@ -57,7 +55,6 @@ void mVUreset(microVU& mVU)
 {
 	g_mvuCommunicationHint[mVU.index] = {};
 	g_mvuPreparedEntry[mVU.index] = nullptr;
-	g_mvuCommunicationResidentBody[mVU.index] = nullptr;
 	const bool use_soft_float = CHECK_VU_SOFT(mVU.index);
 	const bool use_soft_fmac = use_soft_float || (mVU.index == 1 && EmuConfig.Gamefixes.VU1MaddiHack);
 	const bool use_soft_madd_packed =
@@ -164,7 +161,6 @@ void mVUclose(microVU& mVU)
 {
 	g_mvuCommunicationHint[mVU.index] = {};
 	g_mvuPreparedEntry[mVU.index] = nullptr;
-	g_mvuCommunicationResidentBody[mVU.index] = nullptr;
 	// Delete Programs and Block Managers
 	for (u32 i = 0; i < (mVU.progSize / 2); i++)
 	{
