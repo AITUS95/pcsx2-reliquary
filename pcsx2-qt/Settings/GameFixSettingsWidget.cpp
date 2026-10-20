@@ -37,6 +37,7 @@ GameFixSettingsWidget::GameFixSettingsWidget(SettingsWindow* settings_dialog, QW
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.BlitInternalFPSHack, "EmuCore/Gamefixes", "BlitInternalFPSHack", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.VUCommunicationHack, "EmuCore/Gamefixes", "VUCommunicationHack", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.VU1MaddiHack, "EmuCore/Gamefixes", "VU1MaddiHack", false);
+	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.GSZeroStrideHack, "EmuCore/Gamefixes", "GSZeroStrideHack", false);
 	SettingWidgetBinder::BindWidgetToBoolSetting(sif, m_ui.MixSpdifAnalogHack, "EmuCore/Gamefixes", "MixSpdifAnalogHack", false);
 
 	dialog()->registerWidgetHelp(m_ui.FpuMulHack, tr("FPU Multiply Hack"), tr("Unchecked"), tr("For Tales of Destiny."));
@@ -61,6 +62,8 @@ GameFixSettingsWidget::GameFixSettingsWidget(SettingsWindow* settings_dialog, QW
 		tr("Preserves communication boundaries between the EE and both VUs. Synchronizes MTVU at communication boundaries. Disables Instant VU1 and EE cycle rate/skip. May significantly reduce performance."));
 	dialog()->registerWidgetHelp(m_ui.VU1MaddiHack, tr("VU1 MADDi Precision"), tr("Unchecked"),
 		tr("Uses precise VU1 MADDi arithmetic in the interpreter and recompiler. Can reduce floor-material flickering in Marvel Nemesis. Other instructions retain their configured arithmetic."));
+	dialog()->registerWidgetHelp(m_ui.GSZeroStrideHack, tr("Zero-Stride Framebuffer Synchronization"), tr("Unchecked"),
+		tr("Preserves overlapping framebuffer write order in the Software and ParallelGS renderers. Used by Marvel Nemesis. May reduce performance."));
 	dialog()->registerWidgetHelp(m_ui.MixSpdifAnalogHack, tr("Mix SPDIF and Analogue Audio output"), tr("Unchecked"),
 		tr("Mixes S/PDIF bypass PCM with normal analogue SPU2 output. Required for games which route BGM through digital output while sound effects use analogue output."));
 }

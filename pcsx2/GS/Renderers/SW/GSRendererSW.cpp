@@ -565,7 +565,7 @@ void GSRendererSW::Queue(GSRingHeap::SharedPtr<GSRasterizerData>& item)
 	};
 	// With zero page stride, different logical page rows write the same pixels.
 	// Keep primitive and scanline order instead of racing the rasterizer workers.
-	sd->serial = m_context->FRAME.FBW == 0 && !draw_rect.rempty() &&
+	sd->serial = GSConfig.ZeroStrideFramebuffer && m_context->FRAME.FBW == 0 && !draw_rect.rempty() &&
 	             ((sd->global.sel.fwrite && crosses_page(sd->m_fpsm)) ||
 					 (sd->global.sel.zwrite && crosses_page(sd->m_zpsm)));
 	m_rl->Queue(item);

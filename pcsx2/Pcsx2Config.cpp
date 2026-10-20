@@ -846,6 +846,9 @@ bool Pcsx2Config::GSOptions::operator==(const GSOptions& right) const
 
 bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 {
+	if (ZeroStrideFramebuffer != right.ZeroStrideFramebuffer)
+		return false;
+
 	return (
 		OpEqu(bitsets[0]) &&
 		OpEqu(bitsets[1]) &&
@@ -1590,6 +1593,7 @@ static const char* const tbl_GamefixNames[] =
 		"MixSpdifAnalog",
 		"VUCommunication",
 		"VU1Maddi",
+		"GSZeroStride",
 };
 
 const char* Pcsx2Config::GamefixOptions::GetGameFixName(GamefixId id)
@@ -1635,6 +1639,7 @@ void Pcsx2Config::GamefixOptions::Set(GamefixId id, bool enabled)
 		case Fix_MixSpdifAnalog:      MixSpdifAnalogHack      = enabled; break;
 		case Fix_VUCommunication:     VUCommunicationHack     = enabled; break;
 		case Fix_VU1Maddi:            VU1MaddiHack            = enabled; break;
+		case Fix_GSZeroStride:        GSZeroStrideHack        = enabled; break;
 		default:                                                         break;
 			// clang-format on
 	}
@@ -1676,6 +1681,7 @@ bool Pcsx2Config::GamefixOptions::Get(GamefixId id) const
 		case Fix_MixSpdifAnalog:      return MixSpdifAnalogHack;
 		case Fix_VUCommunication:     return VUCommunicationHack;
 		case Fix_VU1Maddi:            return VU1MaddiHack;
+		case Fix_GSZeroStride:        return GSZeroStrideHack;
 		default:                      return false;
 			// clang-format on
 	}
@@ -1707,6 +1713,7 @@ void Pcsx2Config::GamefixOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(MixSpdifAnalogHack);
 	SettingsWrapBitBool(VUCommunicationHack);
 	SettingsWrapBitBool(VU1MaddiHack);
+	SettingsWrapBitBool(GSZeroStrideHack);
 }
 
 const char* Pcsx2Config::DebugAnalysisOptions::RunConditionNames[] = {
