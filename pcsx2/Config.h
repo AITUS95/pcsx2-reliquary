@@ -181,6 +181,7 @@ enum GamefixId
 	Fix_VUCommunication,
 	Fix_VU1Maddi,
 	Fix_GSZeroStride,
+	Fix_GSCoronaDepth,
 
 	GamefixId_COUNT
 };
@@ -947,6 +948,7 @@ struct Pcsx2Config
 
 		// Derived from Gamefixes and copied to the GS thread, not a separate setting.
 		bool ZeroStrideFramebuffer = false;
+		bool CoronaDepth = false;
 
 		u8 PGSSuperSampling = 0;
 		u8 PGSHighResScanout = 0;
@@ -1174,7 +1176,8 @@ struct Pcsx2Config
 			MixSpdifAnalogHack : 1, // Mixes S/PDIF bypass PCM with normal analogue SPU2 output.
 			VUCommunicationHack : 1, // Preserve instruction-pair communication boundaries between EE/VU0/VU1.
 			VU1MaddiHack : 1, // Use precise VU1 MADDi arithmetic without enabling full soft-float.
-			GSZeroStrideHack : 1; // Serialize overlapping zero-stride framebuffer writes.
+			GSZeroStrideHack : 1, // Serialize overlapping zero-stride framebuffer writes.
+			GSCoronaDepthHack : 1; // Keep transparent light and fog quads from occluding subsequent layers.
 		BITFIELD_END
 
 		GamefixOptions();

@@ -846,7 +846,7 @@ bool Pcsx2Config::GSOptions::operator==(const GSOptions& right) const
 
 bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 {
-	if (ZeroStrideFramebuffer != right.ZeroStrideFramebuffer)
+	if (ZeroStrideFramebuffer != right.ZeroStrideFramebuffer || CoronaDepth != right.CoronaDepth)
 		return false;
 
 	return (
@@ -1594,6 +1594,7 @@ static const char* const tbl_GamefixNames[] =
 		"VUCommunication",
 		"VU1Maddi",
 		"GSZeroStride",
+		"GSCoronaDepth",
 };
 
 const char* Pcsx2Config::GamefixOptions::GetGameFixName(GamefixId id)
@@ -1640,6 +1641,7 @@ void Pcsx2Config::GamefixOptions::Set(GamefixId id, bool enabled)
 		case Fix_VUCommunication:     VUCommunicationHack     = enabled; break;
 		case Fix_VU1Maddi:            VU1MaddiHack            = enabled; break;
 		case Fix_GSZeroStride:        GSZeroStrideHack        = enabled; break;
+		case Fix_GSCoronaDepth:       GSCoronaDepthHack       = enabled; break;
 		default:                                                         break;
 			// clang-format on
 	}
@@ -1682,6 +1684,7 @@ bool Pcsx2Config::GamefixOptions::Get(GamefixId id) const
 		case Fix_VUCommunication:     return VUCommunicationHack;
 		case Fix_VU1Maddi:            return VU1MaddiHack;
 		case Fix_GSZeroStride:        return GSZeroStrideHack;
+		case Fix_GSCoronaDepth:       return GSCoronaDepthHack;
 		default:                      return false;
 			// clang-format on
 	}
@@ -1712,8 +1715,14 @@ void Pcsx2Config::GamefixOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(FullVU0SyncHack);
 	SettingsWrapBitBool(MixSpdifAnalogHack);
 	SettingsWrapBitBool(VUCommunicationHack);
-	SettingsWrapBitBool(VU1MaddiHack);
-	SettingsWrapBitBool(GSZeroStrideHack);
+	// These compatibility fixes are supplied only by GameDB. Ignore legacy
+	// manual settings and clear the previous title's values before applying it.
+	if (wrap.IsLoading())
+	{
+		VU1MaddiHack = false;
+		GSZeroStrideHack = false;
+		GSCoronaDepthHack = false;
+	}
 }
 
 const char* Pcsx2Config::DebugAnalysisOptions::RunConditionNames[] = {
