@@ -151,20 +151,6 @@
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="VU1MaddiHack">
-        <property name="text">
-         <string>VU1 MADDi Precision</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QCheckBox" name="GSZeroStrideHack">
-        <property name="text">
-         <string>Zero-Stride Framebuffer Synchronization</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <widget class="QCheckBox" name="MixSpdifAnalogHack">
         <property name="text">
          <string>Mix SPDIF and Analogue Audio output</string>
@@ -209,8 +195,6 @@
   <tabstop>XgKickHack</tabstop>
   <tabstop>BlitInternalFPSHack</tabstop>
   <tabstop>VUCommunicationHack</tabstop>
-  <tabstop>VU1MaddiHack</tabstop>
-  <tabstop>GSZeroStrideHack</tabstop>
   <tabstop>MixSpdifAnalogHack</tabstop>
  </tabstops>
  <resources>
