@@ -16,12 +16,34 @@ static bool mvuNeedsFPCRUpdate(mV)
 	if (CHECK_VU_SOFT(mVU.index))
 		return true;
 
-	// always update on the vu1 thread
-	if (isVU1 && THREAD_VU1)
+	// The asynchronous worker has no established EE host mode. Coupled
+	// communication jobs explicitly establish it before entering either VU.
+	if (isVU1 && MTVU_ASYNC)
 		return true;
 
 	// otherwise only emit when it's different to the EE
 	return EmuConfig.Cpu.FPUFPCR.bitmask != (isVU0 ? EmuConfig.Cpu.VU0FPCR.bitmask : EmuConfig.Cpu.VU1FPCR.bitmask);
+}
+
+// Import the canonical register instances after a host lookup or a VU handoff.
+static void mVUemitCommunicationRegisterImport(mV)
+{
+	xMOVDZX(xmmPQ, ptr32[&mVU.regs().VI[REG_Q].UL]);
+	xMOVDZX(xmmT1, ptr32[&mVU.regs().pending_q]);
+	xUNPCK.LPS(xmmPQ, xmmT1);
+	xMOVDZX(xmmT1, ptr32[&mVU.regs().VI[REG_P].UL]);
+	if (isVU1)
+	{
+		xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
+		xUNPCK.LPS(xmmT1, xmmT2);
+	}
+	else
+		xSHUF.PS(xmmT1, xmmT1, 0);
+	xMOVLH.PS(xmmPQ, xmmT1);
+	xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
+	xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
+	xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
+	xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
 }
 
 #include "microVU_Communication.inl"
@@ -69,8 +91,6 @@ void mVUdispatcherAB(mV)
 			xForwardJump32 ordinary_budget(Jcc_Zero);
 			xMOV(ptr32[&mVU.cycles], 0);
 			ordinary_budget.SetTarget();
-			xMOV(r8, ptrNative[&mVU.prog.x86ptr]);
-			xMOV(ptrNative[&x86Ptr], r8);
 			xForwardJump32 resolved(Jcc_Unconditional);
 			unresolved.SetTarget();
 			if (!isVU1)
@@ -84,35 +104,15 @@ void mVUdispatcherAB(mV)
 		else
 			xFastCall((void*)mVUexecuteVU1, arg1reg, arg2reg);
 
-		if (EmuConfig.Gamefixes.VUCommunicationHack)
-			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
 		// Soft-float keeps the PS2 truncate/DAZ/FTZ mode for the whole VU
 		// dispatch, avoiding serializing mode changes around each arithmetic op.
 		if (mvuNeedsFPCRUpdate(mVU))
 			xLDMXCSR(ptr32[CHECK_VU_SOFT(mVU.index) ? &s_vu_soft_truncate_daz_ftz_mxcsr :
 				(isVU0 ? &EmuConfig.Cpu.VU0FPCR.bitmask : &EmuConfig.Cpu.VU1FPCR.bitmask)]);
 
-		// A native transition between two soft-float VUs keeps the identical
-		// execution mode. Every host callback and the EE return restore EE mode.
-		if (shared_soft_mode)
-			g_mvuCommunicationHotBody[mVU.index] = xGetPtr();
-
 		// Load the same active/future Q/P lanes without whole VI-vector loads.
 		if (EmuConfig.Gamefixes.VUCommunicationHack)
-		{
-			xMOVDZX(xmmPQ, ptr32[&mVU.regs().VI[REG_Q].UL]);
-			xMOVDZX(xmmT1, ptr32[&mVU.regs().pending_q]);
-			xUNPCK.LPS(xmmPQ, xmmT1);
-			xMOVDZX(xmmT1, ptr32[&mVU.regs().VI[REG_P].UL]);
-			if (isVU1)
-			{
-				xMOVDZX(xmmT2, ptr32[&mVU.regs().pending_p]);
-				xUNPCK.LPS(xmmT1, xmmT2);
-			}
-			else
-				xSHUF.PS(xmmT1, xmmT1, 0);
-			xMOVLH.PS(xmmPQ, xmmT1);
-		}
+			mVUemitCommunicationRegisterImport(mVU);
 		else
 		{
 			xMOVAPS(xmmT1, ptr128[&mVU.regs().VI[REG_P].UL]);
@@ -140,17 +140,11 @@ void mVUdispatcherAB(mV)
 			xMOVAPS(ptr128[mVU.macFlags()], xmmT1);
 			xMOVAPS(xmmT1, ptr128[&mVU.regs().micro_clipflags]);
 			xMOVAPS(ptr128[mVU.clipFlags()], xmmT1);
+			xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
+			xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
+			xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
+			xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
 		}
-
-		xMOV(gprF0, ptr32[&mVU.regs().micro_statusflags[0]]);
-		xMOV(gprF1, ptr32[&mVU.regs().micro_statusflags[1]]);
-		xMOV(gprF2, ptr32[&mVU.regs().micro_statusflags[2]]);
-		xMOV(gprF3, ptr32[&mVU.regs().micro_statusflags[3]]);
-
-		// Same-unit native dispatch keeps these canonical STATUS/PQ registers
-		// live. Cross-unit dispatch and every host lookup still reload them.
-		if (EmuConfig.Gamefixes.VUCommunicationHack)
-			g_mvuCommunicationResidentBody[mVU.index] = xGetPtr();
 
 		// Jump to Recompiled Code Block
 		xJMP(rax);
@@ -176,14 +170,15 @@ void mVUdispatcherAB(mV)
 #ifndef mVUprofileProg
 		if (EmuConfig.Gamefixes.VUCommunicationHack)
 		{
-			xMOV(rax, ptrNative[&x86Ptr]);
+			// Compilers publish the allocation cursor when they emit code.
+			// Executing a cached pair does not change it or need host TLS.
+			xMOV(rax, ptrNative[&mVU.prog.x86ptr]);
 			xMOV(rdx, ptrNative[&mVU.prog.x86start]);
 			xCMP(rax, rdx);
 			xForwardJump32 beforeCache(Jcc_Below);
 			xMOV(rdx, ptrNative[&mVU.prog.x86end]);
 			xCMP(rax, rdx);
 			xForwardJump32 cacheFull(Jcc_AboveOrEqual);
-			xMOV(ptrNative[&mVU.prog.x86ptr], rax);
 			xMOV(edx, ptr32[&mVU.totalCycles]);
 			xSUB(edx, ptr32[&mVU.cycles]);
 			xMOV(ptr32[&mVU.cycles], edx);
@@ -553,9 +548,10 @@ _mVUt void mVUcleanUp()
 {
 	microVU& mVU = mVUx;
 
-	mVU.prog.x86ptr = x86Ptr;
+	if (!EmuConfig.Gamefixes.VUCommunicationHack)
+		mVU.prog.x86ptr = x86Ptr;
 
-	if ((xGetPtr() < mVU.prog.x86start) || (xGetPtr() >= mVU.prog.x86end))
+	if ((mVU.prog.x86ptr < mVU.prog.x86start) || (mVU.prog.x86ptr >= mVU.prog.x86end))
 	{
 		Console.WriteLn(vuIndex ? Color_Orange : Color_Magenta, "microVU%d: Program cache limit reached.", mVU.index);
 		mVUreset(mVU);
@@ -568,7 +564,7 @@ _mVUt void mVUcleanUp()
 	                 mVU.totalCycles - std::max(0, mVU.cycles);
 	mVU.regs().cycle += mVU.cycles;
 
-	if (!vuIndex || !THREAD_VU1)
+	if (!vuIndex || !MTVU_ASYNC)
 	{
 		u32 cycles_passed = std::min(mVU.cycles, 3000) * EmuConfig.Speedhacks.EECycleSkip;
 		if (cycles_passed > 0)

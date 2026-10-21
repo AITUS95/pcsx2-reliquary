@@ -22,7 +22,8 @@ void vu1ResetRegs()
 }
 
 void vu1Finish(bool add_cycles) {
-	if (THREAD_VU1) {
+	if (MTVU_ASYNC)
+	{
 		//if (VU0.VI[REG_VPU_STAT].UL & 0x100) DevCon.Error("MTVU: VU0.VI[REG_VPU_STAT].UL & 0x100");
 		if (INSTANT_VU1 || add_cycles)
 		{
@@ -48,7 +49,8 @@ void vu1Finish(bool add_cycles) {
 
 void vu1ExecMicro(u32 addr)
 {
-	if (THREAD_VU1) {
+	if (MTVU_ASYNC)
+	{
 		VU0.VI[REG_VPU_STAT].UL &= ~0xFF00;
 		// Okay this is a little bit of a hack, but with good reason.
 		// Most of the time with MTVU we want to pretend the VU has finished quickly as to gain the benefit from running another thread

@@ -86,8 +86,6 @@ static void mVUemitCommunicationDispatch(microVU& mVU, std::vector<xForwardJump3
 		xMOV(ptr32[&r.runCycles], ecx);
 		xMOV(ptr32[&next.cycles], 0);
 		xMOV(ptr32[&next.totalCycles], ecx);
-		xMOV(r8, ptrNative[&next.prog.x86ptr]);
-		xMOV(ptrNative[&x86Ptr], r8);
 		pxAssert(microVU0.textPtr() == microVU1.textPtr());
 #ifdef mVUprofileProg
 		// Opcode profiling always calls host cleanup, which can clobber xmmPQ.
@@ -98,8 +96,16 @@ static void mVUemitCommunicationDispatch(microVU& mVU, std::vector<xForwardJump3
 		const bool resident = same && (!mvuNeedsFPCRUpdate(next) ||
 										  (CHECK_VU_SOFT(0) && CHECK_VU_SOFT(1)));
 #endif
-		xJMP(ptrNative[resident ? &g_mvuCommunicationResidentBody[next.index] :
-								  &g_mvuCommunicationHotBody[next.index]]);
+		if (!resident)
+		{
+			// Keep the entry work local to this handoff, avoiding an indirect
+			// jump to a shared trampoline followed by another jump to the block.
+			if (!(CHECK_VU_SOFT(0) && CHECK_VU_SOFT(1)) && mvuNeedsFPCRUpdate(next))
+				xLDMXCSR(ptr32[CHECK_VU_SOFT(next.index) ? &s_vu_soft_truncate_daz_ftz_mxcsr :
+														   (next.index ? &EmuConfig.Cpu.VU1FPCR.bitmask : &EmuConfig.Cpu.VU0FPCR.bitmask)]);
+			mVUemitCommunicationRegisterImport(next);
+		}
+		xJMP(rax);
 	};
 	emit(microVU0);
 	select1Inactive0.SetTarget();

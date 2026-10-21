@@ -180,6 +180,7 @@ enum GamefixId
 	Fix_MixSpdifAnalog,
 	Fix_VUCommunication,
 	Fix_VU1Maddi,
+	Fix_GSZeroStride,
 
 	GamefixId_COUNT
 };
@@ -944,6 +945,9 @@ struct Pcsx2Config
 		u8 ShadeBoost_Gamma = DEFAULT_SHADEBOOST_GAMMA;
 		u8 PNGCompressionLevel = 1;
 
+		// Derived from Gamefixes and copied to the GS thread, not a separate setting.
+		bool ZeroStrideFramebuffer = false;
+
 		u8 PGSSuperSampling = 0;
 		u8 PGSHighResScanout = 0;
 		u8 PGSDisableMipmaps = 0;
@@ -1169,7 +1173,8 @@ struct Pcsx2Config
 			FullVU0SyncHack : 1, // Forces tight VU0 sync on every COP2 instruction.
 			MixSpdifAnalogHack : 1, // Mixes S/PDIF bypass PCM with normal analogue SPU2 output.
 			VUCommunicationHack : 1, // Preserve instruction-pair communication boundaries between EE/VU0/VU1.
-			VU1MaddiHack : 1; // Use precise VU1 MADDi arithmetic without enabling full soft-float.
+			VU1MaddiHack : 1, // Use precise VU1 MADDi arithmetic without enabling full soft-float.
+			GSZeroStrideHack : 1; // Serialize overlapping zero-stride framebuffer writes.
 		BITFIELD_END
 
 		GamefixOptions();
@@ -1598,6 +1603,11 @@ namespace EmuFolders
 #define THREAD_VU1 false
 #define REC_VU1 false
 #endif
+// Worker lifetime is independent of the legacy whole-program queue protocol.
+// Communication mode admits canonical quanta on the worker instead of running
+// ahead with shadow VIF state and deferred VU/GIF completion.
+#define MTVU_ASYNC (THREAD_VU1 && !EmuConfig.Gamefixes.VUCommunicationHack)
+#define MTVU_COMMUNICATION (THREAD_VU1 && EmuConfig.Gamefixes.VUCommunicationHack)
 #define INSTANT_VU1 (EmuConfig.Speedhacks.vu1Instant)
 #define CHECK_EEREC (EmuConfig.Cpu.Recompiler.EnableEE)
 #define CHECK_CACHE (EmuConfig.Cpu.Recompiler.EnableEECache)

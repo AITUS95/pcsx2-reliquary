@@ -117,7 +117,7 @@ static __fi void vuExecMicro(int idx, u32 addr, bool requires_wait)
 
 	GetVifX.queued_gif_wait = requires_wait;
 
-	if (!idx || (!THREAD_VU1 && !INSTANT_VU1))
+	if (!idx || (!MTVU_ASYNC && !INSTANT_VU1))
 		vifExecQueue(idx);
 }
 
@@ -318,7 +318,7 @@ static __fi void _vifCode_MPG(int idx, u32 addr, const u32* data, int size)
 
 	vifExecQueue(idx);
 
-	if (idx && THREAD_VU1)
+	if (idx && MTVU_ASYNC)
 	{
 		if ((addr + size * 4) > vuMemSize)
 		{

@@ -7,9 +7,13 @@
 #include "VMManager.h"
 #include "Vif_Dynarec.h"
 
+#include "common/HostSys.h"
+
 #include <thread>
 
 VU_Thread vu1Thread;
+
+static thread_local bool s_is_communication_worker = false;
 
 #define MTVU_ALWAYS_KICK 0
 #define MTVU_SYNC_MODE 0
@@ -17,18 +21,31 @@ VU_Thread vu1Thread;
 // Rounds up a size in bytes for size in u32's
 static __fi u32 size_u32(u32 x) { return (x + 3) >> 2; }
 
+static __fi void CommunicationPause(u32& spins)
+{
+#ifdef ARCH_X86
+	// Short synchronous jobs can finish before a high-latency PAUSE.
+	// Poll briefly, then keep yielding at bounded intervals.
+	if ((++spins & 63) == 0)
+		_mm_pause();
+#else
+	ShortSpin();
+#endif
+}
+
 enum MTVU_EVENT
 {
-	MTVU_VU_EXECUTE,     // Execute VU program
+	MTVU_VU_EXECUTE, // Execute VU program
 	MTVU_VU_WRITE_MICRO, // Write to VU micro-mem
-	MTVU_VU_WRITE_DATA,  // Write to VU data-mem
-	MTVU_VU_WRITE_VIREGS,// Write to VU registers
-	MTVU_VU_WRITE_VFREGS,// Write to VU registers
-	MTVU_VIF_WRITE_COL,  // Write to Vif col reg
-	MTVU_VIF_WRITE_ROW,  // Write to Vif row reg
-	MTVU_VIF_UNPACK,     // Execute Vif Unpack
-	MTVU_NULL_PACKET,    // Go back to beginning of buffer
-	MTVU_RESET
+	MTVU_VU_WRITE_DATA, // Write to VU data-mem
+	MTVU_VU_WRITE_VIREGS, // Write to VU registers
+	MTVU_VU_WRITE_VFREGS, // Write to VU registers
+	MTVU_VIF_WRITE_COL, // Write to Vif col reg
+	MTVU_VIF_WRITE_ROW, // Write to Vif row reg
+	MTVU_VIF_UNPACK, // Execute Vif Unpack
+	MTVU_NULL_PACKET, // Go back to beginning of buffer
+	MTVU_RESET,
+	MTVU_VU_COMMUNICATION // Execute one caller-bounded communication request
 };
 
 // Calls the vif unpack functions from the MTVU thread
@@ -52,12 +69,15 @@ bool SaveStateBase::mtvuFreeze()
 	if (!IsSaving())
 	{
 		vu1Thread.Reset();
-		vu1Thread.WriteCol(vif1);
-		vu1Thread.WriteRow(vif1);
-		vu1Thread.WriteMicroMem(0, VU1.Micro, 0x4000);
-		vu1Thread.WriteDataMem(0, VU1.Mem, 0x4000);
-		vu1Thread.WriteVIRegs(&VU1.VI[0]);
-		vu1Thread.WriteVFRegs(&VU1.VF[0]);
+		if (!MTVU_COMMUNICATION)
+		{
+			vu1Thread.WriteCol(vif1);
+			vu1Thread.WriteRow(vif1);
+			vu1Thread.WriteMicroMem(0, VU1.Micro, 0x4000);
+			vu1Thread.WriteDataMem(0, VU1.Mem, 0x4000);
+			vu1Thread.WriteVIRegs(&VU1.VI[0]);
+			vu1Thread.WriteVFRegs(&VU1.VF[0]);
+		}
 	}
 	for (size_t i = 0; i < 4; ++i)
 	{
@@ -106,6 +126,12 @@ void VU_Thread::Close()
 	if (!IsOpen())
 		return;
 
+	m_communication_exit.store(true, std::memory_order_release);
+	if (m_communication_active.load(std::memory_order_acquire))
+	{
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
+	}
 	m_shutdown_flag.store(true, std::memory_order_release);
 	semaEvent.NotifyOfWork();
 	m_thread.Join();
@@ -118,6 +144,11 @@ void VU_Thread::Reset()
 	m_write_pos = 0;
 	m_ato_read_pos = 0;
 	m_read_pos = 0;
+	pxAssert(!m_communication_active.load(std::memory_order_relaxed));
+	m_communication_job.pending.store(0, std::memory_order_relaxed);
+	m_communication_exit.store(false, std::memory_order_relaxed);
+	m_communication_wakeup.store(0, std::memory_order_relaxed);
+	m_communication_last_long = true;
 	std::memset(&vif, 0, sizeof(vif));
 	std::memset(&vifRegs, 0, sizeof(vifRegs));
 	for (size_t i = 0; i < 4; ++i)
@@ -128,6 +159,7 @@ void VU_Thread::Reset()
 void VU_Thread::ExecuteRingBuffer()
 {
 	Threading::SetNameOfCurrentThread("MTVU");
+	s_is_communication_worker = true;
 
 	for (;;)
 	{
@@ -155,6 +187,15 @@ void VU_Thread::ExecuteRingBuffer()
 					semaXGkick.Post(); // Tell MTGS a path1 packet is complete
 					vuCycles[vuCycleIdx].store(VU1.cycle, std::memory_order_release);
 					vuCycleIdx = (vuCycleIdx + 1) & 3;
+					break;
+				}
+				case MTVU_VU_COMMUNICATION:
+				{
+					pxAssert(MTVU_COMMUNICATION);
+					// Publish the queue entry before accepting synchronous jobs.
+					CommitReadPos();
+					semaEvent.CheckForWork();
+					ExecuteCommunicationJobs();
 					break;
 				}
 				case MTVU_VU_WRITE_MICRO:
@@ -204,6 +245,7 @@ void VU_Thread::ExecuteRingBuffer()
 		}
 	}
 
+	s_is_communication_worker = false;
 	semaEvent.Kill();
 }
 
@@ -223,7 +265,7 @@ __ri void VU_Thread::WaitOnSize(s32 size)
 		// Note: a wait lock instead of a yield also helps to avoid the bug.
 		if (readPos > m_write_pos + size + _4kb)
 			break; // Enough free front space
-		{          // Let MTVU run to free up buffer space
+		{ // Let MTVU run to free up buffer space
 			KickStart();
 			// Locking might trigger a full flush of the ring buffer. Yield
 			// will be more aggressive, and only flush the minimal size.
@@ -429,12 +471,23 @@ void VU_Thread::KickStart()
 
 bool VU_Thread::IsDone()
 {
-	return GetReadPos() == GetWritePos();
+	return GetReadPos() == GetWritePos() &&
+	       (!MTVU_COMMUNICATION || m_communication_job.pending.load(std::memory_order_acquire) == 0);
 }
 
 void VU_Thread::WaitVU()
 {
+	pxAssert(!MTVU_COMMUNICATION || !IsCommunicationWorker());
 	MTVU_LOG("MTVU - WaitVU!");
+	if (m_communication_active.load(std::memory_order_acquire))
+	{
+		m_communication_exit.store(true, std::memory_order_release);
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
+		u32 spins = 0;
+		while (m_communication_active.load(std::memory_order_acquire))
+			CommunicationPause(spins);
+	}
 	semaEvent.WaitForEmpty();
 }
 
@@ -462,6 +515,78 @@ void VU_Thread::ExecuteVU(u32 vu_addr, u32 vif_top, u32 vif_itop, u32 fbrst)
 		VU0.VI[REG_VPU_STAT].UL |= 0x100;
 		CPU_INT(VU_MTVU_BUSY, cycles);
 	}
+}
+
+bool VU_Thread::IsCommunicationWorker()
+{
+	return s_is_communication_worker;
+}
+
+void VU_Thread::ExecuteCommunicationJobs()
+{
+	u32 spins = 0;
+	const bool sleep_when_idle = !EmuConfig.EnableThreadPinning;
+	m_communication_active.store(true, std::memory_order_release);
+	for (;;)
+	{
+		if (m_communication_job.pending.load(std::memory_order_acquire))
+		{
+			const u32 unit = m_communication_job.unit;
+			const u32 cycles = m_communication_job.cycles;
+			pxAssert(unit < 2);
+			{
+				const FPControlRegisterBackup fpcr(EmuConfig.Cpu.FPUFPCR);
+				(unit ? CpuVU1 : CpuVU0)->Execute(cycles);
+			}
+			// The caller may observe or modify canonical state only after this.
+			m_communication_job.pending.store(0, std::memory_order_release);
+			spins = 0;
+		}
+		else if (m_communication_exit.load(std::memory_order_acquire))
+			break;
+		else if (sleep_when_idle && spins >= 4096)
+		{
+			// Recheck after capturing the generation so publication before
+			// wait cannot lose a wake. Exit uses the same independent wake.
+			const u32 wakeup = m_communication_wakeup.load(std::memory_order_acquire);
+			if (!m_communication_job.pending.load(std::memory_order_acquire) &&
+				!m_communication_exit.load(std::memory_order_acquire))
+				m_communication_wakeup.wait(wakeup, std::memory_order_acquire);
+			spins = 0;
+		}
+		else
+			CommunicationPause(spins);
+	}
+	m_communication_active.store(false, std::memory_order_release);
+}
+
+void VU_Thread::ExecuteCommunication(u32 unit, u32 cycles)
+{
+	u32 spins = 0;
+	pxAssert(MTVU_COMMUNICATION && !IsCommunicationWorker() && unit < 2 && IsOpen() && IsDone());
+	if (!m_communication_active.load(std::memory_order_acquire))
+	{
+		m_communication_exit.store(false, std::memory_order_release);
+		ReserveSpace(1);
+		Write(MTVU_VU_COMMUNICATION);
+		CommitWritePos();
+		KickStart();
+		while (!m_communication_active.load(std::memory_order_acquire))
+			CommunicationPause(spins);
+	}
+	// Single producer, one outstanding request. Payload and both ownership
+	// transfers share one cache line; no per-request queue/semaphore traffic.
+	spins = 0;
+	m_communication_job.unit = unit;
+	m_communication_job.cycles = cycles;
+	m_communication_job.pending.store(1, std::memory_order_release);
+	if (!EmuConfig.EnableThreadPinning)
+	{
+		m_communication_wakeup.fetch_add(1, std::memory_order_release);
+		m_communication_wakeup.notify_one();
+	}
+	while (m_communication_job.pending.load(std::memory_order_acquire))
+		CommunicationPause(spins);
 }
 
 void VU_Thread::VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size)

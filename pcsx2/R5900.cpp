@@ -221,7 +221,7 @@ __fi void cpuSetNextEventDelta( s32 delta )
 
 __fi int cpuGetCycles(int interrupt)
 {
-	if(interrupt == VU_MTVU_BUSY && (!THREAD_VU1 || INSTANT_VU1))
+	if (interrupt == VU_MTVU_BUSY && (!MTVU_ASYNC || INSTANT_VU1))
 		return 1;
 	else
 	{

@@ -253,8 +253,18 @@ These values are case-sensitive, so take care.  If you incorrectly specify a Gam
   * Uses the precise multiply-add implementation for VU1 `MADDi`, including its flags, in both VU backends.
     Other instructions retain their configured arithmetic. This stabilizes the floor-material
     selection in Marvel Nemesis without forcing full VU1 soft-float or changing texture distance selection.
-  * Disabled by default and selectable as **VU1 MADDi Precision** in Game Fixes.
-    Marvel Nemesis does not enable this fix automatically through GameDB.
+  * Disabled globally by default and selectable as **VU1 MADDi Precision** in Game Fixes.
+    GameDB enables it automatically for the PAL, NTSC-U, NTSC-K and US demo editions of Marvel Nemesis.
+
+* `GSZeroStrideHack`
+  * Preserves primitive and raster write order when a zero-stride framebuffer aliases page rows.
+    Applies to the Software and ParallelGS renderers; other renderers are unchanged.
+    Serialization can reduce performance for affected draws.
+  * Disabled globally by default and selectable as **Zero-Stride Framebuffer Synchronization**
+    in Game Fixes. GameDB enables it automatically for Marvel Nemesis: `SLES-53585`,
+    `SLUS-21281`, `SLKA-25311` and `SLUS-29156`. Other titles retain the non-serialized
+    path unless this fix is explicitly enabled. It is independent of `VUCommunicationHack`
+    and `VU1MaddiHack`; it does not change VU arithmetic or scheduling.
 
 * `VUOverflowHack`
   * Checks for possible float overflows (Superman Returns).

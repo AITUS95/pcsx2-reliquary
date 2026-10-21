@@ -272,6 +272,7 @@ bool GSRendererPGS::Init()
 	hacks.unsynced_readbacks = GSConfig.PGSDisableReadbackSync != 0;
 	hacks.backbuffer_promotion = GSConfig.PGSSharpBackbuffer != 0;
 	hacks.allow_blend_demote = GSConfig.PGSBlendDemotion != 0;
+	hacks.serialize_zero_stride = GSConfig.ZeroStrideFramebuffer;
 	iface.set_hacks(hacks);
 
 	if (!analog_filter.init(wsi.get_device(), {}))
@@ -372,6 +373,7 @@ void GSRendererPGS::UpdateConfig()
 	hacks.unsynced_readbacks = GSConfig.PGSDisableReadbackSync != 0;
 	hacks.backbuffer_promotion = GSConfig.PGSSharpBackbuffer != 0;
 	hacks.allow_blend_demote = GSConfig.PGSBlendDemotion != 0;
+	hacks.serialize_zero_stride = GSConfig.ZeroStrideFramebuffer;
 	iface.set_hacks(hacks);
 
 	// 0 values mean we don't know / don't care.
@@ -595,6 +597,9 @@ int GSRendererPGS::Defrost(freezeData* data)
 		read_data(ptr, &gif_path.tag, sizeof(gif_path.tag));
 		gif_path.loop = 0;
 		read_reg(ptr, gif_path.reg);
+		// Communication state must resume with the saved GIF packet position.
+		if (EmuConfig.Gamefixes.VUCommunicationHack)
+			iface.get_gif_path(i) = gif_path;
 	}
 
 	// internal_Q

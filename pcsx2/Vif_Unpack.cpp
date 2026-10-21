@@ -353,7 +353,7 @@ _vifT int nVifUnpack(const u8* data)
 				vifRegs.num = 256;
 		}
 
-		if (!idx || !THREAD_VU1)
+		if (!idx || !MTVU_ASYNC)
 		{
 			if (newVifDynaRec)
 				dVifUnpack<idx>(data, isFill);

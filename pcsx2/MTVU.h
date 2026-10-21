@@ -22,16 +22,37 @@ class VU_Thread final {
 	u32 buffer[buffer_size];
 	// Note: keep atomic on separate cache line to avoid CPU conflict
 	alignas(__cachelinesize) std::atomic<int> m_ato_read_pos; // Only modified by VU thread
-	alignas(__cachelinesize) std::atomic<int> m_ato_write_pos;    // Only modified by EE thread
-	alignas(__cachelinesize) int  m_read_pos; // temporary read pos (local to the VU thread)
-	int  m_write_pos; // temporary write pos (local to the EE thread)
+	alignas(__cachelinesize) std::atomic<int> m_ato_write_pos; // Only modified by EE thread
+	struct alignas(__cachelinesize) CommunicationJob
+	{
+		std::atomic<u32> pending{0};
+		u32 unit = 0;
+		u32 cycles = 0;
+	};
+	CommunicationJob m_communication_job;
+	alignas(__cachelinesize) std::atomic<bool> m_communication_active{false};
+	std::atomic<bool> m_communication_exit{false};
+	std::atomic<u32> m_communication_wakeup{0};
+	alignas(__cachelinesize) bool m_communication_last_long = true; // EE-owned host placement estimate.
+	alignas(__cachelinesize) int m_read_pos; // temporary read pos (local to the VU thread)
+	int m_write_pos; // temporary write pos (local to the EE thread)
 	Threading::WorkSema semaEvent;
 	std::atomic_bool m_shutdown_flag{false};
 
 	Threading::Thread m_thread;
 
 public:
-	alignas(16)  vifStruct        vif;
+	static constexpr u32 CommunicationOffloadMinCycles = 16;
+	__fi bool ShouldOffloadCommunication(u32 cycles) const
+	{
+		return cycles >= CommunicationOffloadMinCycles && m_communication_last_long;
+	}
+	__fi void RecordCommunicationWork(u64 cycles)
+	{
+		m_communication_last_long = cycles >= CommunicationOffloadMinCycles;
+	}
+
+	alignas(16) vifStruct vif;
 	alignas(16)  VIFregisters     vifRegs;
 	Threading::UserspaceSemaphore semaXGkick;
 	std::atomic<unsigned int> vuCycles[4]; // Used for VU cycle stealing hack
@@ -79,6 +100,11 @@ public:
 
 	void ExecuteVU(u32 vu_addr, u32 vif_top, u32 vif_itop, u32 fbrst);
 
+	// Execute the caller's unchanged VU request on the worker, including its
+	// coupled VU0/VU1 admissions. EE joins before accessing canonical state.
+	void ExecuteCommunication(u32 unit, u32 cycles);
+	static bool IsCommunicationWorker();
+
 	void VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size);
 
 	// Writes to VU's Micro Memory (size in bytes)
@@ -97,6 +123,7 @@ public:
 
 private:
 	void ExecuteRingBuffer();
+	void ExecuteCommunicationJobs();
 
 	void WaitOnSize(s32 size);
 	void ReserveSpace(s32 size);
