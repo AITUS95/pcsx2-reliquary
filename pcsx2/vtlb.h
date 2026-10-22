@@ -77,8 +77,8 @@ extern void vtlb_UpdateFastmemProtection(u32 paddr, u32 size, PageProtectionMode
 extern bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address);
 
 extern void vtlb_ClearLoadStoreInfo();
-extern void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr);
-extern void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, u32 guest_addr, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr);
+extern void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr, bool is_word_store = false);
+extern void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, u32 guest_addr, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr, bool is_word_store);
 extern bool vtlb_IsFaultingPC(u32 guest_pc);
 
 //Memory functions
@@ -89,6 +89,9 @@ extern RETURNS_R128 vtlb_memRead128(u32 mem);
 
 template< typename DataType >
 extern void vtlb_memWrite(u32 mem, DataType value);
+// SW drives the low 64 GPR bits onto the EE bus, although RAM accepts only 32.
+extern void vtlb_memWrite32Bus(u32 mem, u64 value);
+extern void vtlb_memWrite32BusHandler(u32 paddr, u64 value, vtlbMemW32FP* handler);
 extern void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value);
 
 // "Safe" variants of vtlb, designed for external tools.
@@ -110,8 +113,8 @@ extern int vtlb_DynGenReadNonQuad_Const(u32 bits, bool sign, bool xmm, u32 addr_
 extern int vtlb_DynGenReadQuad(u32 bits, int addr_reg, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
 extern int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallback dest_reg_alloc = nullptr);
 
-extern void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg);
-extern void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg);
+extern void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg, bool is_word_store = false);
+extern void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg, bool is_word_store = false);
 
 extern void vtlb_DynGenDispatchers();
 

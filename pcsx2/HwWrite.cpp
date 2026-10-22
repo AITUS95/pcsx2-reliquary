@@ -398,7 +398,15 @@ void _hwWrite64( u32 mem, u64 value )
 		case 0x07:
 		{
 			u128 zerofill = u128::From32(0);
-			zerofill._u64[(mem >> 3) & 0x01] = value;
+			if constexpr (page == 0x05)
+			{
+				zerofill._u64[0] = value;
+				zerofill._u64[1] = value;
+			}
+			else
+			{
+				zerofill._u64[(mem >> 3) & 0x01] = value;
+			}
 			hwWrite128<page>(mem & ~0x0f, r128_from_u128(zerofill));
 		}
 		return;

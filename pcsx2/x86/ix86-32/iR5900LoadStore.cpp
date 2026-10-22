@@ -173,7 +173,7 @@ static void recStore(u32 bits)
 		if (bits == 128)
 			dstadr &= ~0x0f;
 
-		vtlb_DynGenWrite_Const(bits, xmm, dstadr, regt);
+		vtlb_DynGenWrite_Const(bits, xmm, dstadr, regt, bits == 32);
 	}
 	else
 	{
@@ -193,7 +193,7 @@ static void recStore(u32 bits)
 			xAND(arg1regd, ~0x0F);
 
 		// TODO(Stenzek): Use Rs directly if imm=0. But beware of upper bits.
-		vtlb_DynGenWrite(bits, xmm, arg1regd.GetId(), regt);
+		vtlb_DynGenWrite(bits, xmm, arg1regd.GetId(), regt, bits == 32);
 	}
 }
 
