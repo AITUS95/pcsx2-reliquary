@@ -134,7 +134,9 @@ void vif1CpuFifoDrain()
 	}
 	vif1Regs.stat.FQC = std::min<u32>(16, static_cast<u32>((s_vif1_cpu_words.size() + 3) / 4));
 	vif1UpdateCpuFifoStatus();
-	if (!s_vif1_cpu_words.empty())
+	// DMA retries must not postpone an existing finish event: DMA is scanned
+	// first, so replacing its deadline can otherwise starve FLUSHE indefinitely.
+	if (!s_vif1_cpu_words.empty() && !(cpuRegs.interrupt & (1 << VIF_VU1_FINISH)))
 	{
 		CPU_SET_DMASTALL(VIF_VU1_FINISH, true);
 		CPU_INT(VIF_VU1_FINISH, 128);
