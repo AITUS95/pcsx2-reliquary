@@ -296,7 +296,7 @@ static void DynGen_HandlerTest(const GenDirectFn& gen_direct, int mode, int bits
 		xSUB(arg1regd, eax);
 		xLEA(arg3reg, ptr[(void*)vtlbdata.RWFT[szidx][mode]]);
 		xMOV(arg3reg, ptrNative[(rax * wordsize) + arg3reg]);
-		xFastCall(vtlb_memWrite32BusHandler);
+		xFastCall(reinterpret_cast<const void*>(vtlb_memWrite32BusHandler));
 	}
 	else
 	{
@@ -941,7 +941,7 @@ void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg, b
 		{
 			_freeX86reg(arg3reg.GetId());
 			xMOV64(arg3reg, reinterpret_cast<uptr>(vmv.assumeHandlerGetRaw(szidx, true)));
-			xFastCall(vtlb_memWrite32BusHandler);
+			xFastCall(reinterpret_cast<const void*>(vtlb_memWrite32BusHandler));
 		}
 		else
 		{
