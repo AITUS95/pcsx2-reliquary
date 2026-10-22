@@ -212,6 +212,7 @@ __fi void vif1FBRST(u32 value)
 	if (FBRST(value).RST) // Reset Vif.
 	{
 		vif1CpuFifoReset();
+		nVif[1].bSize = 0;
 		u128 SaveCol;
 		u128 SaveRow;
 		//if(vif1ch.chcr.STR) DevCon.Warning("FBRST While Vif1 active");
