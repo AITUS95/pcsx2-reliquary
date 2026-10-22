@@ -181,6 +181,13 @@ __fi void mVUsetFlags(mV, microFlagCycles& mFC)
 		mFC.xMac[1] = -1;
 		mFC.xMac[2] = -1;
 		mFC.xMac[3] = -1;
+		if (!isCOP2 && EmuConfig.Gamefixes.VUCommunicationHack)
+		{
+			// Keep the mature input available while the first MAC write is pending.
+			// Otherwise sortFlag's fallback can replicate that future write.
+			xM = (mVUpBlock->pState.flagInfo >> 4) & 3;
+			mFC.xMac[(xM - 1) & 3] = 0;
+		}
 	}
 
 	if (!(mVUpBlock->pState.needExactMatch & 4))
