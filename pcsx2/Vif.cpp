@@ -233,6 +233,7 @@ __fi void vif1FBRST(u32 value)
 		vif1Regs.mskpath3 = false;
 		gifRegs.stat.M3P = 0;
 		vif1Regs.err.reset();
+		vif1Regs.num = 0;
 		vif1.inprogress = mfifo_empty;
 		vif1.cmd = 0;
 		vif1.vifstalled.enabled = false;
