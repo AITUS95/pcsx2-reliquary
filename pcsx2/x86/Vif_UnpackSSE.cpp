@@ -233,7 +233,10 @@ void VifUnpackSSE_Base::xUPK_V3_8() const
 		return;
 
 	xPMOVXX8(destReg);
-	if (UnpkLoopIteration != IsAligned)
+	// W observes the next byte, including padding, unless XYZ consumed the
+	// last byte of an input doubleword. This applies throughout the unpack.
+	const bool inputBoundary = ((IsAligned * 4 + UnpkLoopIteration * 3) & 7) == 0;
+	if (V3_8_UseInputBoundary ? inputBoundary : UnpkLoopIteration != IsAligned)
 		xBLEND.PS(destReg, zeroReg, 0x8); //zero last word - tested on ps2
 }
 

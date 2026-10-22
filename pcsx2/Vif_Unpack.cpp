@@ -337,12 +337,23 @@ _vifT int nVifUnpack(const u8* data)
 	const uint ret    = std::min(vif.vifpacketsize, vif.tag.size);
 	const bool isFill = (vifRegs.cycle.cl < wl);
 	s32        size   = ret << 2;
+	const bool v3_8 = (vif.cmd & 0x0f) == 10;
+	u32 readAheadSize = v3_8 && vif.vifpacketsize > ret ? sizeof(u32) : 0;
 
 	if (ret == vif.tag.size) // Full Transfer
 	{
 		if (v.bSize) // Last transfer was partial
 		{
 			memcpy(&v.buffer[v.bSize], data, size);
+			if (v3_8)
+			{
+				// Preserve the fourth input component when assembling a split V3-8
+				// transfer. This word is observed, but not consumed, by UNPACK.
+				pxAssert(v.bSize + size + sizeof(u32) <= sizeof(v.buffer));
+				std::memset(&v.buffer[v.bSize + size], 0, sizeof(u32));
+				std::memcpy(&v.buffer[v.bSize + size], data + size, readAheadSize);
+				readAheadSize = sizeof(u32);
+			}
 			v.bSize += size;
 			size = v.bSize;
 			data = v.buffer;
@@ -361,7 +372,7 @@ _vifT int nVifUnpack(const u8* data)
 				_nVifUnpack(idx, data, vifRegs.mode, isFill);
 		}
 		else
-			vu1Thread.VifUnpack(vif, vifRegs, (u8*)data, size);
+			vu1Thread.VifUnpack(vif, vifRegs, data, size, readAheadSize);
 
 		vif.pass     = 0;
 		vif.tag.size = 0;

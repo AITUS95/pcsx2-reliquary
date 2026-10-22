@@ -105,7 +105,7 @@ public:
 	void ExecuteCommunication(u32 unit, u32 cycles);
 	static bool IsCommunicationWorker();
 
-	void VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size);
+	void VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size, u32 readAheadSize);
 
 	// Writes to VU's Micro Memory (size in bytes)
 	void WriteMicroMem(u32 vu_micro_addr, const void* data, u32 size);
