@@ -756,6 +756,7 @@ void VMManager::ApplyGameFixes()
 {
 	const auto apply_runtime_gamefix_options = [] {
 		EmuConfig.GS.ZeroStrideFramebuffer = EmuConfig.Gamefixes.GSZeroStrideHack;
+		EmuConfig.GS.CoronaDepth = EmuConfig.Gamefixes.GSCoronaDepthHack;
 		if (!EmuConfig.Gamefixes.VUCommunicationHack)
 			return;
 		EmuConfig.Speedhacks.vu1Instant = false;

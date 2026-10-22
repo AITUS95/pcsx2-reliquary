@@ -273,6 +273,7 @@ bool GSRendererPGS::Init()
 	hacks.backbuffer_promotion = GSConfig.PGSSharpBackbuffer != 0;
 	hacks.allow_blend_demote = GSConfig.PGSBlendDemotion != 0;
 	hacks.serialize_zero_stride = GSConfig.ZeroStrideFramebuffer;
+	hacks.mask_corona_depth = GSConfig.CoronaDepth;
 	iface.set_hacks(hacks);
 
 	if (!analog_filter.init(wsi.get_device(), {}))
@@ -374,6 +375,7 @@ void GSRendererPGS::UpdateConfig()
 	hacks.backbuffer_promotion = GSConfig.PGSSharpBackbuffer != 0;
 	hacks.allow_blend_demote = GSConfig.PGSBlendDemotion != 0;
 	hacks.serialize_zero_stride = GSConfig.ZeroStrideFramebuffer;
+	hacks.mask_corona_depth = GSConfig.CoronaDepth;
 	iface.set_hacks(hacks);
 
 	// 0 values mean we don't know / don't care.

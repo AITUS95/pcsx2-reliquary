@@ -2654,7 +2654,28 @@ void GSState::FlushPrim()
 		}
 
 		if (!skip_draw)
+		{
+			// Marvel Nemesis can leave depth writes enabled for light and fog quads.
+			// Their transparent borders then reject subsequent fog layers. Override
+			// only this material's draw state; preserve the GIF register for later draws.
+			GSDrawingContext* const context = m_context;
+			const GIFRegZBUF zbuf = context->ZBUF;
+			const bool mask_effect_depth = GSConfig.CoronaDepth && !zbuf.ZMSK &&
+			                               PRIM->PRIM == GS_TRIANGLESTRIP && PRIM->TME && PRIM->ABE && !PRIM->FGE && !PRIM->AA1 && !PRIM->FST &&
+			                               context->TEX0.TCC && context->TEX0.TFX == TFX_MODULATE && context->TEX1.MXL == 0 &&
+			                               context->ALPHA.A == 0 && context->ALPHA.C == 0 && context->ALPHA.D == 1 &&
+			                               !context->TEST.ATE && !context->TEST.DATE && context->TEST.ZTE && context->TEST.ZTST == ZTST_GEQUAL &&
+			                               context->FRAME.PSM == PSMCT32 && zbuf.PSM == PSMZ24 &&
+			                               ((context->TEX0.PSM == PSMT8 && context->TEX0.TW == 7 && context->TEX0.TH == 7 && context->ALPHA.B == 2) ||
+											   (context->TEX0.PSM == PSMCT32 && context->TEX0.TW == 6 && context->TEX0.TH == 6 && context->ALPHA.B == 1));
+			if (mask_effect_depth)
+				context->ZBUF.ZMSK = 1;
+
 			Draw();
+
+			if (mask_effect_depth)
+				context->ZBUF = zbuf;
+		}
 
 		g_perfmon.Put(GSPerfMon::Draw, 1);
 		g_perfmon.Put(GSPerfMon::Prim, idx_buff.tail / GSUtil::GetVertexCount(PRIM->PRIM));

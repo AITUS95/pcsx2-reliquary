@@ -24138,6 +24138,7 @@ SLES-53585:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
     - VU1MaddiHack # Prevent floor-material flickering.
     - GSZeroStrideHack # Preserve overlapping framebuffer write order.
+    - GSCoronaDepthHack # Prevent light and fog quads from occluding later layers.
 SLES-53587:
   name: "Garfield - Saving Arlene"
   region: "PAL-M5"
@@ -32830,6 +32831,7 @@ SLKA-25311:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
     - VU1MaddiHack # Prevent floor-material flickering.
     - GSZeroStrideHack # Preserve overlapping framebuffer write order.
+    - GSCoronaDepthHack # Prevent light and fog quads from occluding later layers.
 SLKA-25313:
   name: "NARUTO -나루토- 우즈마키 인전"
   name-sort: "Naruto - Uzumaki Injeon"
@@ -71527,6 +71529,7 @@ SLUS-21281:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
     - VU1MaddiHack # Prevent floor-material flickering.
     - GSZeroStrideHack # Preserve overlapping framebuffer write order.
+    - GSCoronaDepthHack # Prevent light and fog quads from occluding later layers.
 SLUS-21282:
   name: "007 - From Russia with Love"
   region: "NTSC-U"
@@ -76148,6 +76151,7 @@ SLUS-29156:
     - VUCommunicationHack # Preserve EE/VU and shared VU register ordering.
     - VU1MaddiHack # Prevent floor-material flickering.
     - GSZeroStrideHack # Preserve overlapping framebuffer write order.
+    - GSCoronaDepthHack # Prevent light and fog quads from occluding later layers.
 SLUS-29157:
   name: "Dragon Quest VIII - Journey of the Cursed King [Demo]"
   region: "NTSC-U"

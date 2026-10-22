@@ -253,18 +253,30 @@ These values are case-sensitive, so take care.  If you incorrectly specify a Gam
   * Uses the precise multiply-add implementation for VU1 `MADDi`, including its flags, in both VU backends.
     Other instructions retain their configured arithmetic. This stabilizes the floor-material
     selection in Marvel Nemesis without forcing full VU1 soft-float or changing texture distance selection.
-  * Disabled globally by default and selectable as **VU1 MADDi Precision** in Game Fixes.
-    GameDB enables it automatically for the PAL, NTSC-U, NTSC-K and US demo editions of Marvel Nemesis.
+  * GameDB-only: enabled automatically for the PAL, NTSC-U, NTSC-K and US demo editions of
+    Marvel Nemesis (`SLES-53585`, `SLUS-21281`, `SLKA-25311`, `SLUS-29156`). There is no manual
+    setting; legacy INI values are ignored, so other titles cannot inherit it.
 
 * `GSZeroStrideHack`
   * Preserves primitive and raster write order when a zero-stride framebuffer aliases page rows.
     Applies to the Software and ParallelGS renderers; other renderers are unchanged.
     Serialization can reduce performance for affected draws.
-  * Disabled globally by default and selectable as **Zero-Stride Framebuffer Synchronization**
-    in Game Fixes. GameDB enables it automatically for Marvel Nemesis: `SLES-53585`,
-    `SLUS-21281`, `SLKA-25311` and `SLUS-29156`. Other titles retain the non-serialized
-    path unless this fix is explicitly enabled. It is independent of `VUCommunicationHack`
+  * GameDB-only: enabled automatically for Marvel Nemesis: `SLES-53585`, `SLUS-21281`,
+    `SLKA-25311` and `SLUS-29156`. There is no manual setting; legacy INI values are ignored.
+    Other titles retain the non-serialized path. It is independent of `VUCommunicationHack`
     and `VU1MaddiHack`; it does not change VU arithmetic or scheduling.
+
+* `GSCoronaDepthHack`
+  * Compatibility workaround for Marvel Nemesis light and fog quads that inherit depth writes.
+    Masks depth writes for non-fogged triangle strips with no alpha test, limited to additive
+    128x128 indexed coronas and standard-alpha 64x64 RGBA fog with no mipmaps. Depth testing,
+    color blending and the guest ZBUF register are preserved. This prevents rectangular
+    holes behind coronas and diagonal cuts caused by fog triangles occluding later fog layers.
+  * Applies to Hardware, Software and ParallelGS. GameDB-only: enabled automatically for
+    `SLES-53585`, `SLUS-21281`, `SLKA-25311` and `SLUS-29156`. There is no manual setting;
+    legacy INI values are ignored. Like other automatic fixes, these three require automatic
+    game fixes to remain enabled. The cause of the alternating incoming
+    depth mask is not yet established; this is not a change to general GS depth-write semantics.
 
 * `VUOverflowHack`
   * Checks for possible float overflows (Superman Returns).
