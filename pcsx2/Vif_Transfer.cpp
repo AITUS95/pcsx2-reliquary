@@ -72,7 +72,8 @@ _vifT void vifTransferLoop(u32* &data) {
 	}
 }
 
-_vifT static __fi bool vifTransfer(u32 *data, int size, bool TTE) {
+_vifT static __fi bool vifTransfer(u32* data, int size, bool TTE, bool dma_input = false)
+{
 	vifStruct& vifX = GetVifX;
 
 	// irqoffset necessary to add up the right qws, or else will spin (spiderman)
@@ -82,6 +83,18 @@ _vifT static __fi bool vifTransfer(u32 *data, int size, bool TTE) {
 	vifTransferLoop<idx>(data);
 
 	transferred += size - vifX.vifpacketsize;
+	if constexpr (idx == 1)
+	{
+		// FLUSHE stops the decoder, not normal DMA input. Keep the command
+		// and following words in order until VU1 finishes; do not decode ahead.
+		if (dma_input && vif1.dmamode == VIF_NORMAL_FROM_MEM_MODE &&
+			dmacRegs.ctrl.MFD != MFD_VIF1 && vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10)
+		{
+			const u32 accepted = vif1DeferDmaInput(data, vifX.vifpacketsize, transferred & 3);
+			vifX.vifpacketsize -= accepted;
+			transferred += accepted;
+		}
+	}
 
 	//Make this a minimum of 1 cycle so if it's the end of the packet it doesnt just fall through.
 	//Metal Saga can do this, just to be safe :)
@@ -132,4 +145,9 @@ bool VIF0transfer(u32 *data, int size, bool TTE) {
 }
 bool VIF1transfer(u32 *data, int size, bool TTE) {
 	return vifTransfer<1>(data, size, TTE);
+}
+
+bool VIF1dmaTransfer(u32* data, int size)
+{
+	return vifTransfer<1>(data, size, false, true);
 }

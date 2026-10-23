@@ -50,9 +50,25 @@ u32 vif1DeferErrorInput(const u32* data, u32 words)
 	return accepted;
 }
 
+u32 vif1DeferDmaInput(const u32* data, u32 words, u32 partial_qw)
+{
+	u32 accepted = std::min(words, 64u - static_cast<u32>(s_vif1_cpu_words.size()));
+	// Retire complete DMA QW, including words decoded before FLUSHE stopped.
+	// The remaining head fragment still occupies its input QW.
+	const u32 remainder = (partial_qw + accepted) & 3;
+	accepted = accepted >= remainder ? accepted - remainder : 0;
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), data, data + accepted);
+	return accepted;
+}
+
 bool vif1ErrorInputFull()
 {
 	return vif1Regs.stat.ER0 && s_vif1_cpu_words.size() == 64;
+}
+
+bool vif1FlushInputFull()
+{
+	return s_vif1_cpu_words.size() > 60;
 }
 
 void vif1CpuFifoReset()
@@ -74,7 +90,7 @@ bool vif1CpuFifoFreeze(SaveStateBase& state)
 	u32 count = static_cast<u32>(s_vif1_cpu_words.size());
 	state.Freeze(count);
 	// Reject unsupported/corrupt state before allocating beyond the device FIFO.
-	if (!state.IsOkay() || count > 64 || (count && !vif1CpuFifoEnabled()))
+	if (!state.IsOkay() || count > 64)
 		return false;
 	if (state.IsLoading())
 		s_vif1_cpu_words.resize(count);
@@ -97,7 +113,7 @@ static void vif1UpdateCpuFifoStatus()
 		const bool cpu_input_empty = s_vif1_cpu_draining ? s_vif1_cpu_words.empty() : !vif1ch.chcr.STR;
 		const bool cpu_waiting_for_input = cpu_input_empty && vif1.tag.size &&
 		                                   !vif1.waitforvu && !vif1Regs.stat.VGW;
-		if ((vif1.done || cpu_waiting_for_input) && !vif1ch.qwc)
+		if ((vif1.done || cpu_waiting_for_input) && !vif1ch.qwc && !vif1.waitforvu && !vif1Regs.stat.VGW)
 			vif1Regs.stat.VPS = VPS_WAITING;
 	}
 	else
