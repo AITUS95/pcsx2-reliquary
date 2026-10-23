@@ -23,6 +23,17 @@ static bool s_vif1_cpu_draining = false;
 static mem128_t s_vif1_cpu_store = {};
 static bool s_vif1_cpu_store_pending = false;
 
+static u32 vif1CpuInputCapacity()
+{
+	// CPU input can still be accepted after a FLUSHE-stalled DMA has
+	// exhausted its admission window. Keep that headroom separate from
+	// the DMA limit; it does not establish the full overflow behavior.
+	return vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10 &&
+	               !vif1Regs.stat.test(VIF1_STAT_FDR | VIF1_STAT_ER0 | VIF1_STAT_VSS | VIF1_STAT_VFS | VIF1_STAT_VIS) ?
+	           76 :
+	           64;
+}
+
 bool vif1CpuFifoBusBlocked()
 {
 	return s_vif1_cpu_store_pending;
@@ -45,14 +56,14 @@ bool vif1CpuFifoPending()
 
 u32 vif1DeferErrorInput(const u32* data, u32 words)
 {
-	const u32 accepted = std::min(words, 64u - static_cast<u32>(s_vif1_cpu_words.size()));
+	const u32 accepted = std::min(words, 64u - std::min<u32>(64, static_cast<u32>(s_vif1_cpu_words.size())));
 	s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), data, data + accepted);
 	return accepted;
 }
 
 u32 vif1DeferDmaInput(const u32* data, u32 words, u32 partial_qw)
 {
-	u32 accepted = std::min(words, 64u - static_cast<u32>(s_vif1_cpu_words.size()));
+	u32 accepted = std::min(words, 64u - std::min<u32>(64, static_cast<u32>(s_vif1_cpu_words.size())));
 	// Retire complete DMA QW, including words decoded before FLUSHE stopped.
 	// The remaining head fragment still occupies its input QW.
 	const u32 remainder = (partial_qw + accepted) & 3;
@@ -89,8 +100,8 @@ bool vif1CpuFifoFreeze(SaveStateBase& state)
 
 	u32 count = static_cast<u32>(s_vif1_cpu_words.size());
 	state.Freeze(count);
-	// Reject unsupported/corrupt state before allocating beyond the device FIFO.
-	if (!state.IsOkay() || count > 64)
+	// The serialized input includes the bounded CPU headroom during FLUSHE.
+	if (!state.IsOkay() || count > 76)
 		return false;
 	if (state.IsLoading())
 		s_vif1_cpu_words.resize(count);
@@ -150,7 +161,7 @@ void vif1CpuFifoDrain()
 	const size_t consumed = before - vif1.vifpacketsize;
 	s_vif1_cpu_words.erase(s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + consumed);
 	vif1.irqoffset = dma_offset;
-	if (s_vif1_cpu_store_pending && s_vif1_cpu_words.size() <= 60)
+	if (s_vif1_cpu_store_pending && s_vif1_cpu_words.size() <= vif1CpuInputCapacity() - 4)
 	{
 		s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), s_vif1_cpu_store._u32, s_vif1_cpu_store._u32 + 4);
 		s_vif1_cpu_store_pending = false;
@@ -248,7 +259,7 @@ void WriteFIFO_VIF1(const mem128_t* value)
 	if (vif1CpuFifoEnabled())
 	{
 		pxAssertRel(!s_vif1_cpu_store_pending, "EE executed another store while the VIF1 bus write was blocked");
-		if (s_vif1_cpu_words.size() > 60)
+		if (s_vif1_cpu_words.size() > vif1CpuInputCapacity() - 4)
 		{
 			s_vif1_cpu_store = *value;
 			s_vif1_cpu_store_pending = true;
