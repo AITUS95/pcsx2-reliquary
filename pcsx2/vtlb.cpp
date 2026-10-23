@@ -18,6 +18,7 @@
 
 #include "Common.h"
 #include "vtlb.h"
+#include "ps2/HwInternal.h"
 #include "COP0.h"
 #include "Cache.h"
 #include "IopMem.h"
@@ -73,6 +74,7 @@ struct LoadstoreBackpatchInfo
 	bool is_signed;
 	bool is_load;
 	bool is_fpr;
+	bool is_word_store;
 };
 
 static constexpr size_t FASTMEM_AREA_SIZE = 0x100000000ULL;
@@ -283,6 +285,29 @@ void vtlb_memWrite(u32 addr, DataType data)
 		//Console.WriteLn("Translated 0x%08X to 0x%08X", addr,paddr);
 		return vmv.assumeHandler<sizeof(DataType) * 8, true>()(paddr, data);
 	}
+}
+
+void vtlb_memWrite32Bus(u32 mem, u64 value)
+{
+	const auto vmv = vtlbdata.vmap[mem >> VTLB_PAGE_BITS];
+	if (vmv.isHandler(mem))
+	{
+		vtlb_memWrite32BusHandler(vmv.assumeHandlerGetPAddr(mem), value, vmv.assumeHandler<32, true>());
+		return;
+	}
+	vtlb_memWrite<mem32_t>(mem, static_cast<u32>(value));
+}
+
+void vtlb_memWrite32BusHandler(u32 paddr, u64 value, vtlbMemW32FP* handler)
+{
+	if (handler == hwWrite32<0x05>)
+	{
+		// VIF1 repeats the driven doubleword on both halves of its FIFO port.
+		// A word store in the other word lane rotates the driven doubleword.
+		hwWrite64<0x05>(paddr & ~7u, (paddr & 4) ? std::rotl(value, 32) : value);
+		return;
+	}
+	handler(paddr, static_cast<u32>(value));
 }
 
 void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value)
@@ -1100,7 +1125,7 @@ void vtlb_ClearLoadStoreInfo()
 	s_fastmem_faulting_pcs.clear();
 }
 
-void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr)
+void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr, bool is_word_store)
 {
 	pxAssert(code_size < std::numeric_limits<u8>::max());
 
@@ -1108,7 +1133,7 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 	if (iter != s_fastmem_backpatch_info.end())
 		s_fastmem_backpatch_info.erase(iter);
 
-	LoadstoreBackpatchInfo info{guest_pc, gpr_bitmask, fpr_bitmask, static_cast<u8>(code_size), address_register, data_register, size_in_bits, is_signed, is_load, is_fpr};
+	LoadstoreBackpatchInfo info{guest_pc, gpr_bitmask, fpr_bitmask, static_cast<u8>(code_size), address_register, data_register, size_in_bits, is_signed, is_load, is_fpr, is_word_store};
 	s_fastmem_backpatch_info.emplace(code_address, info);
 }
 
@@ -1127,7 +1152,7 @@ bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 	const u32 guest_addr = static_cast<u32>(fault_address - fastmem_start);
 	vtlb_DynBackpatchLoadStore(code_address, info.code_size, info.guest_pc, guest_addr,
 		info.gpr_bitmask, info.fpr_bitmask, info.address_register, info.data_register,
-		info.size_in_bits, info.is_signed, info.is_load, info.is_fpr);
+		info.size_in_bits, info.is_signed, info.is_load, info.is_fpr, info.is_word_store);
 
 	// queue block for recompilation later
 	Cpu->Clear(info.guest_pc, 1);

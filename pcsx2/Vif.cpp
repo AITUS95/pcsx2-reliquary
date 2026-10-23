@@ -145,6 +145,7 @@ __fi void vif0FBRST(u32 value)
 __fi void vif1FBRST(u32 value)
 {
 	VIF_LOG("VIF1_FBRST write32 0x%8.8x", value);
+	const bool cancel_tag_error = FBRST(value).STC && vif1Regs.stat.ER0;
 
 	/* Fixme: Forcebreaks are pretty unknown for operation, presumption is it just stops it what its doing
 			  usually accompanied by a reset, but if we find a broken game which falls here, we need to see it! (Refraction) */
@@ -175,7 +176,7 @@ __fi void vif1FBRST(u32 value)
 		bool cancel = false;
 		//DevCon.Warning("Cancel stall. Stat = %x", vif1Regs.stat._u32);
 		// Cancel stall, first check if there is a stall to cancel, and then clear VIF1_STAT VSS|VFS|VIS|INT|ER0|ER1 bits
-		if (vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
+		if (vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS | VIF1_STAT_ER0))
 		{
 			cancel = true;
 		}
@@ -212,6 +213,7 @@ __fi void vif1FBRST(u32 value)
 	if (FBRST(value).RST) // Reset Vif.
 	{
 		vif1CpuFifoReset();
+		nVif[1].bSize = 0;
 		u128 SaveCol;
 		u128 SaveRow;
 		//if(vif1ch.chcr.STR) DevCon.Warning("FBRST While Vif1 active");
@@ -232,6 +234,7 @@ __fi void vif1FBRST(u32 value)
 		vif1Regs.mskpath3 = false;
 		gifRegs.stat.M3P = 0;
 		vif1Regs.err.reset();
+		vif1Regs.num = 0;
 		vif1.inprogress = mfifo_empty;
 		vif1.cmd = 0;
 		vif1.vifstalled.enabled = false;
@@ -239,6 +242,8 @@ __fi void vif1FBRST(u32 value)
 	}
 	else if (FBRST(value).STC && vif1CpuFifoPending())
 	{
+		if (cancel_tag_error)
+			vif1CpuFifoDrain();
 		CPU_SET_DMASTALL(VIF_VU1_FINISH, true);
 		CPU_INT(VIF_VU1_FINISH, 128);
 	}

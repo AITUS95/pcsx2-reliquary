@@ -18,6 +18,7 @@ public:
 	int  UnpkLoopIteration;
 	int  UnpkNoOfIterations;
 	int  IsAligned;
+	bool V3_8_UseInputBoundary = false;
 
 
 protected:

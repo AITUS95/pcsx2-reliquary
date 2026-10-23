@@ -129,9 +129,9 @@ bool _VIF1chain()
 		vif1ch.qwc, vif1ch.madr, vif1ch.tadr);
 
 	if (vif1.irqoffset.enabled)
-		return VIF1transfer(pMem + vif1.irqoffset.value, vif1ch.qwc * 4 - vif1.irqoffset.value, false);
+		return VIF1dmaTransfer(pMem + vif1.irqoffset.value, vif1ch.qwc * 4 - vif1.irqoffset.value);
 	else
-		return VIF1transfer(pMem, vif1ch.qwc * 4, false);
+		return VIF1dmaTransfer(pMem, vif1ch.qwc * 4);
 }
 
 __fi void vif1SetupTransfer()
@@ -166,6 +166,12 @@ __fi void vif1SetupTransfer()
 	if (vif1ch.chcr.TTE)
 	{
 		// Transfer dma tag if tte is set
+		// The observed V4-32 mismatch is detected at a vector boundary. Keep
+		// other formats and partial-vector admission on their existing paths.
+		const bool tag_mismatch = !vif1Regs.err.ME0 && !vif1Regs.stat.ER0 &&
+		                          !vif1.irqoffset.enabled && vif1.cmd == 0x6c && vif1.pass &&
+		                          vif1Regs.mode == 0 && vif1Regs.cycle.cl == 1 && vif1Regs.cycle.wl == 1 &&
+		                          nVif[1].bSize == 0;
 
 		bool ret;
 
@@ -190,6 +196,8 @@ __fi void vif1SetupTransfer()
 			ret = VIF1transfer((u32*)&masked_tag + 2, 2, true); //Transfer Tag
 			//ret = VIF1transfer((u32*)ptag + 2, 2);  //Transfer Tag
 		}
+		if (tag_mismatch && !vif1.vifpacketsize)
+			vif1Regs.stat.ER0 = true;
 
 		if (!ret && vif1.irqoffset.enabled)
 		{
@@ -263,6 +271,9 @@ __fi void vif1VUFinish()
 	if (vif1.waitforvu)
 	{
 		vif1.waitforvu = false;
+		// DMA may already have ended while FLUSHE held its accepted input.
+		// Release that input even when no active DMA remains to wake the decoder.
+		vif1CpuFifoDrain();
 		//Check if VIF is already scheduled to interrupt, if it's waiting, kick it :P
 		if ((cpuRegs.interrupt & ((1 << DMAC_VIF1) | (1 << DMAC_MFIFO_VIF))) == 0 && vif1ch.chcr.STR && !vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
 		{
@@ -278,7 +289,9 @@ __fi void vif1VUFinish()
 
 __fi void vif1Interrupt()
 {
-	if (vif1CpuFifoPending())
+	const bool buffer_flushe = vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10 &&
+	                           vif1.dmamode == VIF_NORMAL_FROM_MEM_MODE && dmacRegs.ctrl.MFD != MFD_VIF1;
+	if (vif1CpuFifoPending() && !vif1Regs.stat.ER0 && !buffer_flushe)
 	{
 		vif1CpuFifoDrain();
 		if (vif1CpuFifoPending())
@@ -329,7 +342,7 @@ __fi void vif1Interrupt()
 			return;
 		}
 		vif1Regs.stat.VGW = 0; //Path 3 isn't busy so we don't need to wait for it.
-		vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+		vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 		//Simulated GS transfer time done, clear the flags
 	}
 
@@ -337,9 +350,11 @@ __fi void vif1Interrupt()
 	{
 		//DevCon.Warning("Waiting on VU1");
 		//CPU_INT(DMAC_VIF1, 16);
-		CPU_INT(VIF_VU1_FINISH, std::max(16, cpuGetCycles(VU_MTVU_BUSY)));
+		if (!buffer_flushe || !(cpuRegs.interrupt & (1 << VIF_VU1_FINISH)))
+			CPU_INT(VIF_VU1_FINISH, std::max(16, cpuGetCycles(VU_MTVU_BUSY)));
 		CPU_SET_DMASTALL(DMAC_VIF1, true);
-		return;
+		if (!buffer_flushe)
+			return;
 	}
 
 	if (vif1Regs.stat.VGW)
@@ -375,7 +390,7 @@ __fi void vif1Interrupt()
 
 			//NFSHPS stalls when the whole packet has gone across (it stalls in the last 32bit cmd)
 			//In this case VIF will end
-			vif1Regs.stat.FQC = std::min((u32)0x10, vif1ch.qwc);
+			vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min((u32)0x10, vif1ch.qwc);
 			if ((vif1ch.qwc > 0 || !vif1.done) && !CHECK_VIF1STALLHACK)
 			{
 				vif1Regs.stat.VPS = VPS_DECODING; //If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors)
@@ -391,7 +406,7 @@ __fi void vif1Interrupt()
 	//Mirroring change to VIF0
 	if (vif1.cmd)
 	{
-		if (vif1.done && (vif1ch.qwc == 0))
+		if (vif1.done && (vif1ch.qwc == 0) && !vif1CpuFifoPending())
 			vif1Regs.stat.VPS = VPS_WAITING;
 	}
 	else
@@ -402,10 +417,17 @@ __fi void vif1Interrupt()
 	if (vif1.inprogress & 0x1)
 	{
 		_VIF1chain();
+		if (vif1ch.qwc && (vif1ErrorInputFull() || (vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10 && vif1FlushInputFull())))
+		{
+			if (vif1.waitforvu && !(cpuRegs.interrupt & (1 << VIF_VU1_FINISH)))
+				CPU_INT(VIF_VU1_FINISH, std::max(16, cpuGetCycles(VU_MTVU_BUSY)));
+			CPU_SET_DMASTALL(DMAC_VIF1, true);
+			return;
+		}
 		// VIF_NORMAL_FROM_MEM_MODE is a very slow operation.
 		// Timesplitters 2 depends on this beeing a bit higher than 128.
 		if (vif1ch.chcr.DIR)
-			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+			vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
 		{
@@ -433,7 +455,7 @@ __fi void vif1Interrupt()
 		if ((vif1.inprogress & 0x1) == 0)
 			vif1SetupTransfer();
 		if (vif1ch.chcr.DIR)
-			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+			vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
 		{
@@ -470,7 +492,7 @@ __fi void vif1Interrupt()
 	}
 
 	if (vif1ch.chcr.DIR)
-		vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+		vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 	vif1ch.chcr.STR = false;
 	vif1.vifstalled.enabled = false;
@@ -537,7 +559,7 @@ void dmaVIF1()
 	}
 
 	if (vif1ch.chcr.DIR)
-		vif1Regs.stat.FQC = std::min((u32)0x10, vif1ch.qwc);
+		vif1Regs.stat.FQC = ((vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) || vif1CpuFlushWindowActive()) ? vif1InputFifoCount() : std::min((u32)0x10, vif1ch.qwc);
 
 	// Check VIF isn't stalled before starting the loop.
 	// Batman Vengence does something stupid and instead of cancelling a stall it tries to restart VIF, THEN check the stall

@@ -271,7 +271,7 @@ static u8* GetIndirectDispatcherPtr(int mode, int operandsize, int sign = 0)
 //
 
 template <typename GenDirectFn>
-static void DynGen_HandlerTest(const GenDirectFn& gen_direct, int mode, int bits, bool sign = false)
+static void DynGen_HandlerTest(const GenDirectFn& gen_direct, int mode, int bits, bool sign = false, bool is_word_store = false)
 {
 	int szidx = 0;
 	switch (bits)
@@ -287,7 +287,21 @@ static void DynGen_HandlerTest(const GenDirectFn& gen_direct, int mode, int bits
 	gen_direct();
 	xForwardJump8 done;
 	to_handler.SetTarget();
-	xFastCall(GetIndirectDispatcherPtr(mode, szidx, sign));
+	if (is_word_store)
+	{
+		pxAssert(mode == 1 && bits == 32);
+		xMOVZX(eax, al);
+		if (wordsize != 8)
+			xSUB(arg1regd, 0x80000000);
+		xSUB(arg1regd, eax);
+		xLEA(arg3reg, ptr[(void*)vtlbdata.RWFT[szidx][mode]]);
+		xMOV(arg3reg, ptrNative[(rax * wordsize) + arg3reg]);
+		xFastCall(reinterpret_cast<const void*>(vtlb_memWrite32BusHandler));
+	}
+	else
+	{
+		xFastCall(GetIndirectDispatcherPtr(mode, szidx, sign));
+	}
 	done.SetTarget();
 }
 
@@ -655,7 +669,7 @@ int vtlb_DynGenReadQuad_Const(u32 bits, u32 addr_const, vtlb_ReadRegAllocCallbac
 //////////////////////////////////////////////////////////////////////////////////////////
 //                            Dynarec Store Implementations
 
-void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
+void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg, bool is_word_store)
 {
 #ifdef LOG_STORES
 	{
@@ -716,7 +730,7 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 		iFlushCall(FLUSH_FULLVTLB);
 
 		DynGen_PrepRegs(addr_reg, value_reg, sz, xmm);
-		DynGen_HandlerTest([sz]() { DynGen_DirectWrite(sz); }, 1, sz);
+		DynGen_HandlerTest([sz]() { DynGen_DirectWrite(sz); }, 1, sz, false, is_word_store);
 		return;
 	}
 
@@ -766,7 +780,7 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 	vtlb_AddLoadStoreInfo((uptr)codeStart, static_cast<u32>(x86Ptr - codeStart),
 		pc, GetAllocatedGPRBitmask(), GetAllocatedXMMBitmask(),
 		static_cast<u8>(addr_reg), static_cast<u8>(value_reg),
-		static_cast<u8>(sz), false, false, xmm);
+		static_cast<u8>(sz), false, false, xmm, is_word_store);
 }
 
 
@@ -774,7 +788,7 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 // Generates code for a store instruction, where the address is a known constant.
 // TLB lookup is performed in const, with the assumption that the COP0/TLB will clear the
 // recompiler if the TLB is changed.
-void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg)
+void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg, bool is_word_store)
 {
 	EE::Profiler.EmitConstMem(addr_const);
 
@@ -923,7 +937,16 @@ void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg)
 			xMOV(arg2reg, xRegister64(value_reg));
 		}
 
-		xFastCall(vmv.assumeHandlerGetRaw(szidx, true));
+		if (is_word_store)
+		{
+			_freeX86reg(arg3reg.GetId());
+			xMOV64(arg3reg, reinterpret_cast<uptr>(vmv.assumeHandlerGetRaw(szidx, true)));
+			xFastCall(reinterpret_cast<const void*>(vtlb_memWrite32BusHandler));
+		}
+		else
+		{
+			xFastCall(vmv.assumeHandlerGetRaw(szidx, true));
+		}
 	}
 }
 
@@ -946,7 +969,7 @@ void vtlb_DynV2P()
 
 void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, u32 guest_addr,
 	u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register,
-	u8 size_in_bits, bool is_signed, bool is_load, bool is_xmm)
+	u8 size_in_bits, bool is_signed, bool is_load, bool is_xmm, bool is_word_store)
 {
 	static constexpr u32 GPR_SIZE = 8;
 	static constexpr u32 XMM_SIZE = 16;
@@ -1059,7 +1082,7 @@ void vtlb_DynBackpatchLoadStore(uptr code_address, u32 code_size, u32 guest_pc, 
 		}
 
 		DynGen_PrepRegs(address_register, data_register, size_in_bits, is_xmm);
-		DynGen_HandlerTest([size_in_bits]() { DynGen_DirectWrite(size_in_bits); }, 1, size_in_bits);
+		DynGen_HandlerTest([size_in_bits]() { DynGen_DirectWrite(size_in_bits); }, 1, size_in_bits, false, is_word_store);
 	}
 
 	// restore regs

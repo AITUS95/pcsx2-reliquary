@@ -253,6 +253,7 @@ void VifUnpackSSE_Dynarec::CompileRoutine()
 	const int skipSize  = blockSize - cycleSize;
 
 	uint vNum = vB.num ? vB.num : 256;
+	V3_8_UseInputBoundary = !isFill;
 	doMode    = (upkNum == 0xf) ? 0 : doMode; // V4_5 has no mode feature.
 	UnpkNoOfIterations = 0;
 	VIF_LOG("Compiling new block, unpack number %x, mode %x, masking %x, vNum %x", upkNum, doMode, doMask, vNum);

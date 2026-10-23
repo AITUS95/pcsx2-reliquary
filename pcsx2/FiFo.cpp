@@ -13,15 +13,40 @@
 bool vif1CpuFifoEnabled()
 {
 	// Finish accepted writes even if the compatibility option is changed.
-	return EmuConfig.Gamefixes.VUCommunicationHack || vif1CpuFifoPending();
+	return EmuConfig.Gamefixes.VUCommunicationHack || vif1Regs.stat.ER0 || vif1CpuFifoPending();
 }
 
 static std::vector<u32> s_vif1_cpu_words;
+// Input already staged beyond the counted FIFO remains owned until STC.
+static std::vector<u32> s_vif1_error_stage;
+static std::vector<u32> s_vif1_flush_stage;
+enum class Vif1InputOrigin : u32
+{
+	None,
+	Cpu,
+	Dma,
+	Legacy,
+};
+static Vif1InputOrigin s_vif1_input_origin = Vif1InputOrigin::None;
+static u32 s_vif1_cpu_word_offset = 0;
 static bool s_vif1_cpu_draining = false;
 // One store may wait on the bus outside the 16-QW device FIFO. Both EE
 // backends must yield after that store, before executing another instruction.
 static mem128_t s_vif1_cpu_store = {};
 static bool s_vif1_cpu_store_pending = false;
+
+static u32 vif1CpuInputCapacity()
+{
+	if (vif1CpuFlushWindowActive())
+		return 76 - s_vif1_cpu_word_offset;
+	// CPU input can still be accepted after a FLUSHE-stalled DMA has
+	// exhausted its admission window. Keep that headroom separate from
+	// the DMA limit; it does not establish the full overflow behavior.
+	return vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10 &&
+	               !vif1Regs.stat.test(VIF1_STAT_FDR | VIF1_STAT_ER0 | VIF1_STAT_VSS | VIF1_STAT_VFS | VIF1_STAT_VIS) ?
+	           76 :
+	           64;
+}
 
 bool vif1CpuFifoBusBlocked()
 {
@@ -40,12 +65,125 @@ bool vif1CpuFifoActive()
 
 bool vif1CpuFifoPending()
 {
-	return !s_vif1_cpu_words.empty();
+	return !s_vif1_error_stage.empty() || !s_vif1_flush_stage.empty() || !s_vif1_cpu_words.empty();
+}
+
+static u32 vif1OwnedInputWords()
+{
+	return static_cast<u32>(s_vif1_error_stage.size() + s_vif1_flush_stage.size() + s_vif1_cpu_words.size());
+}
+
+bool vif1CpuFlushWindowActive()
+{
+	return s_vif1_input_origin == Vif1InputOrigin::Cpu && vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10 &&
+	       !vif1Regs.stat.test(VIF1_STAT_FDR | VIF1_STAT_ER0 | VIF1_STAT_VSS | VIF1_STAT_VFS | VIF1_STAT_VIS);
+}
+
+static void vif1StageFlushHead()
+{
+	// The partial command QW and two following QW are outside the counted FIFO.
+	const u32 capacity = 12 - s_vif1_cpu_word_offset;
+	const u32 count = std::min<u32>(capacity - static_cast<u32>(s_vif1_flush_stage.size()),
+		static_cast<u32>(s_vif1_cpu_words.size()));
+	s_vif1_flush_stage.insert(s_vif1_flush_stage.end(), s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + count);
+	s_vif1_cpu_words.erase(s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + count);
+}
+
+static void vif1StageErrorHead()
+{
+	// A loaded state retains the original flat, ordered input encoding.
+	// Reconstruct the split lazily: HW registers load after VIF internals.
+	const u32 count = std::min<u32>(8 - static_cast<u32>(s_vif1_error_stage.size()),
+		static_cast<u32>(s_vif1_cpu_words.size()));
+	s_vif1_error_stage.insert(s_vif1_error_stage.end(), s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + count);
+	s_vif1_cpu_words.erase(s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + count);
+}
+
+u32 vif1InputFifoCount()
+{
+	if (vif1Regs.stat.ER0)
+	{
+		vif1StageErrorHead();
+		return std::min<u32>(16, static_cast<u32>((s_vif1_cpu_words.size() + 3) / 4));
+	}
+	if (vif1CpuFlushWindowActive())
+	{
+		vif1StageFlushHead();
+		return std::min<u32>(16, static_cast<u32>((s_vif1_cpu_words.size() + 3) / 4));
+	}
+	return std::min<u32>(16, (vif1OwnedInputWords() + 3) / 4);
+}
+
+static bool vif1ErrorDmaAdmission()
+{
+	return vif1Regs.stat.ER0 && !vif1Regs.stat.FDR && vif1.cmd == 0x6c && vif1.pass &&
+	       vif1Regs.mode == 0 && vif1Regs.cycle.cl == 1 && vif1Regs.cycle.wl == 1 &&
+	       vif1.dmamode == VIF_NORMAL_FROM_MEM_MODE && !vif1.irqoffset.enabled &&
+	       dmacRegs.ctrl.MFD == NO_MFD && dmacRegs.ctrl.STD == NO_STD;
+}
+
+static void vif1AppendErrorInput(const u32* data, u32 words)
+{
+	const u32 staged = std::min<u32>(words, 8 - static_cast<u32>(s_vif1_error_stage.size()));
+	s_vif1_error_stage.insert(s_vif1_error_stage.end(), data, data + staged);
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), data + staged, data + words);
+}
+
+u32 vif1DeferErrorInput(const u32* data, u32 words, bool dma_input)
+{
+	vif1StageErrorHead();
+	if (dma_input && vif1ErrorDmaAdmission() && !(words & 3))
+	{
+		u32 accepted = 0;
+		// Check the request threshold between bursts, not after every QW.
+		// Staged input is not FIFO space and must not consume its grant.
+		while (accepted < words && vif1InputFifoCount() <= 8)
+		{
+			const u32 burst = std::min<u32>(32, words - accepted);
+			pxAssert(s_vif1_cpu_words.size() + burst <= 64);
+			vif1AppendErrorInput(data + accepted, burst);
+			accepted += burst;
+		}
+		return accepted;
+	}
+	// Preserve the existing CPU/chain admission limit outside normal DMA.
+	const u32 accepted = std::min(words, 64u - std::min<u32>(64, vif1OwnedInputWords()));
+	vif1AppendErrorInput(data, accepted);
+	return accepted;
+}
+
+u32 vif1DeferDmaInput(const u32* data, u32 words, u32 partial_qw)
+{
+	if (s_vif1_input_origin == Vif1InputOrigin::None)
+		s_vif1_input_origin = Vif1InputOrigin::Dma;
+	u32 accepted = std::min(words, 64u - std::min<u32>(64, vif1OwnedInputWords()));
+	// Retire complete DMA QW, including words decoded before FLUSHE stopped.
+	// The remaining head fragment still occupies its input QW.
+	const u32 remainder = (partial_qw + accepted) & 3;
+	accepted = accepted >= remainder ? accepted - remainder : 0;
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), data, data + accepted);
+	return accepted;
+}
+
+bool vif1ErrorInputFull()
+{
+	if (vif1ErrorDmaAdmission())
+		return vif1InputFifoCount() > 8;
+	return vif1Regs.stat.ER0 && vif1OwnedInputWords() >= 64;
+}
+
+bool vif1FlushInputFull()
+{
+	return vif1OwnedInputWords() > 60;
 }
 
 void vif1CpuFifoReset()
 {
 	s_vif1_cpu_words.clear();
+	s_vif1_error_stage.clear();
+	s_vif1_flush_stage.clear();
+	s_vif1_input_origin = Vif1InputOrigin::None;
+	s_vif1_cpu_word_offset = 0;
 	s_vif1_cpu_store_pending = false;
 	s_vif1_cpu_store = {};
 }
@@ -59,16 +197,44 @@ bool vif1CpuFifoFreeze(SaveStateBase& state)
 		return state.IsOkay();
 	}
 
-	u32 count = static_cast<u32>(s_vif1_cpu_words.size());
+	u32 count = vif1OwnedInputWords();
 	state.Freeze(count);
-	// Reject unsupported/corrupt state before allocating beyond the device FIFO.
-	if (!state.IsOkay() || count > 64 || (count && !vif1CpuFifoEnabled()))
+	// The serialized input includes the bounded CPU headroom during FLUSHE.
+	if (!state.IsOkay() || count > 76)
 		return false;
 	if (state.IsLoading())
+	{
+		s_vif1_error_stage.clear();
+		s_vif1_flush_stage.clear();
 		s_vif1_cpu_words.resize(count);
-	state.FreezeMem(s_vif1_cpu_words.data(), count * sizeof(u32));
+		state.FreezeMem(s_vif1_cpu_words.data(), count * sizeof(u32));
+	}
+	else
+	{
+		// Keep the existing ordered-word representation, without new fields.
+		state.FreezeMem(s_vif1_error_stage.data(), s_vif1_error_stage.size() * sizeof(u32));
+		state.FreezeMem(s_vif1_flush_stage.data(), s_vif1_flush_stage.size() * sizeof(u32));
+		state.FreezeMem(s_vif1_cpu_words.data(), s_vif1_cpu_words.size() * sizeof(u32));
+	}
 	state.Freeze(s_vif1_cpu_store_pending);
 	state.Freeze(s_vif1_cpu_store);
+	if (state.GetVersion() >= 3)
+	{
+		state.Freeze(s_vif1_input_origin);
+		state.Freeze(s_vif1_cpu_word_offset);
+	}
+	else if (state.IsLoading())
+	{
+		// Version 2 was the earlier input-window format, with only an offset.
+		s_vif1_cpu_word_offset = 0;
+		if (state.GetVersion() == 2)
+			state.Freeze(s_vif1_cpu_word_offset);
+		// The old flat encoding cannot identify the first ingress source.
+		// Preserve its accepted data without guessing until the queue drains.
+		s_vif1_input_origin = count ? Vif1InputOrigin::Legacy : Vif1InputOrigin::None;
+	}
+	if (s_vif1_input_origin > Vif1InputOrigin::Legacy || s_vif1_cpu_word_offset > 3 || count + s_vif1_cpu_word_offset > 76)
+		return false;
 	// A held bus write can exist only while the device FIFO has no room
 	// for another QW. Otherwise a loaded state could block EE forever with
 	// no queued input available to release the write.
@@ -81,7 +247,11 @@ static void vif1UpdateCpuFifoStatus()
 {
 	if (vif1.cmd)
 	{
-		if (vif1.done && !vif1ch.qwc)
+		// A CPU fragment can exhaust the available input without completing DMA.
+		const bool cpu_input_empty = s_vif1_cpu_draining ? s_vif1_cpu_words.empty() : !vif1ch.chcr.STR;
+		const bool cpu_waiting_for_input = cpu_input_empty && vif1.tag.size &&
+		                                   !vif1.waitforvu && !vif1Regs.stat.VGW;
+		if ((vif1.done || cpu_waiting_for_input) && !vif1ch.qwc && !vif1.waitforvu && !vif1Regs.stat.VGW)
 			vif1Regs.stat.VPS = VPS_WAITING;
 	}
 	else
@@ -99,11 +269,16 @@ static void vif1UpdateCpuFifoStatus()
 
 void vif1CpuFifoDrain()
 {
-	if (!vif1CpuFifoEnabled() || s_vif1_cpu_words.empty())
+	if (!vif1CpuFifoEnabled() || !vif1CpuFifoPending())
 		return;
 	if (s_vif1_cpu_draining || vif1Regs.stat.FDR ||
-		vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
+		vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS | VIF1_STAT_ER0))
 		return;
+	// STC exposes the staged head to the decoder before the counted FIFO.
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.begin(), s_vif1_error_stage.begin(), s_vif1_error_stage.end());
+	s_vif1_error_stage.clear();
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.begin(), s_vif1_flush_stage.begin(), s_vif1_flush_stage.end());
+	s_vif1_flush_stage.clear();
 	s_vif1_cpu_draining = true;
 	// Pending CPU words precede a newly started DMA. Keep its word offset
 	// separate from the already compacted CPU FIFO input.
@@ -117,8 +292,20 @@ void vif1CpuFifoDrain()
 	VIF1transfer(s_vif1_cpu_words.data(), static_cast<int>(before), true);
 	const size_t consumed = before - vif1.vifpacketsize;
 	s_vif1_cpu_words.erase(s_vif1_cpu_words.begin(), s_vif1_cpu_words.begin() + consumed);
+	s_vif1_cpu_word_offset = (s_vif1_cpu_word_offset + static_cast<u32>(consumed)) & 3;
+	if (s_vif1_cpu_words.empty())
+	{
+		s_vif1_cpu_word_offset = 0;
+		s_vif1_input_origin = Vif1InputOrigin::None;
+	}
+	else if (s_vif1_input_origin == Vif1InputOrigin::Cpu && consumed)
+		s_vif1_input_origin = Vif1InputOrigin::Legacy;
+	if (s_vif1_input_origin == Vif1InputOrigin::None && vif1.waitforvu && (vif1.cmd & 0x7f) == 0x10)
+		s_vif1_input_origin = Vif1InputOrigin::Cpu;
+	if (vif1CpuFlushWindowActive())
+		vif1StageFlushHead();
 	vif1.irqoffset = dma_offset;
-	if (s_vif1_cpu_store_pending && s_vif1_cpu_words.size() <= 60)
+	if (s_vif1_cpu_store_pending && vif1OwnedInputWords() <= vif1CpuInputCapacity() - 4)
 	{
 		s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), s_vif1_cpu_store._u32, s_vif1_cpu_store._u32 + 4);
 		s_vif1_cpu_store_pending = false;
@@ -132,9 +319,11 @@ void vif1CpuFifoDrain()
 		hwIntcIrq(VIF1intc);
 		--vif1.irq;
 	}
-	vif1Regs.stat.FQC = std::min<u32>(16, static_cast<u32>((s_vif1_cpu_words.size() + 3) / 4));
+	vif1Regs.stat.FQC = vif1InputFifoCount();
 	vif1UpdateCpuFifoStatus();
-	if (!s_vif1_cpu_words.empty())
+	// DMA retries must not postpone an existing finish event: DMA is scanned
+	// first, so replacing its deadline can otherwise starve FLUSHE indefinitely.
+	if (vif1CpuFifoPending() && !(cpuRegs.interrupt & (1 << VIF_VU1_FINISH)))
 	{
 		CPU_SET_DMASTALL(VIF_VU1_FINISH, true);
 		CPU_INT(VIF_VU1_FINISH, 128);
@@ -214,7 +403,19 @@ void WriteFIFO_VIF1(const mem128_t* value)
 	if (vif1CpuFifoEnabled())
 	{
 		pxAssertRel(!s_vif1_cpu_store_pending, "EE executed another store while the VIF1 bus write was blocked");
-		if (s_vif1_cpu_words.size() > 60)
+		if (vif1CpuFlushWindowActive())
+		{
+			vif1StageFlushHead();
+			if (s_vif1_cpu_words.size() == 64)
+			{
+				// A full CPU port replaces the write slot without advancing it.
+				std::memcpy(s_vif1_cpu_words.data(), value, sizeof(*value));
+				vif1Regs.stat.FQC = vif1InputFifoCount();
+				vif1CpuFifoDrain();
+				return;
+			}
+		}
+		if (vif1OwnedInputWords() > vif1CpuInputCapacity() - 4)
 		{
 			s_vif1_cpu_store = *value;
 			s_vif1_cpu_store_pending = true;
@@ -223,8 +424,16 @@ void WriteFIFO_VIF1(const mem128_t* value)
 			cpuSetEvent();
 			return;
 		}
-		s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), value->_u32, value->_u32 + 4);
-		vif1Regs.stat.FQC = std::min<u32>(16, static_cast<u32>((s_vif1_cpu_words.size() + 3) / 4));
+		if (vif1Regs.stat.ER0)
+		{
+			[[maybe_unused]] const u32 accepted = vif1DeferErrorInput(value->_u32, 4, false);
+			pxAssert(accepted == 4);
+			// Input admission continues while ER0 stops the UNPACK decoder.
+			vif1Regs.stat.VPS = VPS_TRANSFERRING;
+		}
+		else
+			s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), value->_u32, value->_u32 + 4);
+		vif1Regs.stat.FQC = vif1InputFifoCount();
 		vif1CpuFifoDrain();
 		return;
 	}

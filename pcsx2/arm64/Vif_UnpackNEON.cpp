@@ -246,7 +246,8 @@ void VifUnpackNEON_Base::xUPK_V3_8() const
 		return;
 
 	xPMOVXX8(destReg);
-	if (UnpkLoopIteration != IsAligned)
+	const bool inputBoundary = ((IsAligned * 4 + UnpkLoopIteration * 3) & 7) == 0;
+	if (V3_8_UseInputBoundary ? inputBoundary : UnpkLoopIteration != IsAligned)
 		armAsm->Ins(destReg.V4S(), 3, a64::wzr);
 }
 

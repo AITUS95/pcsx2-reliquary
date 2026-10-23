@@ -589,16 +589,27 @@ void VU_Thread::ExecuteCommunication(u32 unit, u32 cycles)
 		CommunicationPause(spins);
 }
 
-void VU_Thread::VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size)
+void VU_Thread::VifUnpack(vifStruct& _vif, VIFregisters& _vifRegs, const u8* data, u32 size, u32 readAheadSize)
 {
 	MTVU_LOG("MTVU - VifUnpack!");
 	u32 vif_copy_size = (u32)((uptr)&_vif.StructEnd - (uptr)&_vif.tag);
-	ReserveSpace(1 + size_u32(vif_copy_size) + size_u32(sizeof(VIFregistersMTVU)) + 1 + size_u32(size));
+	const bool v3_8 = (_vif.cmd & 0x0f) == 10;
+	const u32 inputSize = size + (v3_8 ? sizeof(u32) : 0);
+	ReserveSpace(1 + size_u32(vif_copy_size) + size_u32(sizeof(VIFregistersMTVU)) + 1 + size_u32(inputSize));
 	Write(MTVU_VIF_UNPACK);
 	Write(&_vif.tag, vif_copy_size);
 	WriteRegs(&_vifRegs);
-	Write(size);
+	Write(inputSize);
 	Write(data, size);
+	if (v3_8)
+	{
+		// The worker must own the lookahead word. Reading the next queue
+		// command instead would make W depend on host scheduling.
+		if (readAheadSize)
+			Write(data + size, sizeof(u32));
+		else
+			Write(0);
+	}
 	CommitWritePos();
 	KickStart();
 }
