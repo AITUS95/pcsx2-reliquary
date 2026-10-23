@@ -19,6 +19,18 @@ _vifT void vifTransferLoop(u32* &data) {
 
 	vifXRegs.stat.VPS |= VPS_TRANSFERRING;
 	vifXRegs.stat.ER1  = false;
+	if constexpr (idx == 1)
+	{
+		if (vif1Regs.stat.ER0)
+		{
+			// DMA may finish while the decoder is stopped. Keep its input owned
+			// until STC; changing the error mask alone does not resume execution.
+			const u32 accepted = vif1DeferErrorInput(data, pSize);
+			data += accepted;
+			pSize -= accepted;
+			return;
+		}
+	}
 	//VIF_LOG("Starting VIF%d loop, pSize = %x, stalled = %x", idx, pSize, vifX.vifstalled.enabled );
 	while (pSize > 0 && !vifX.vifstalled.enabled) {
 

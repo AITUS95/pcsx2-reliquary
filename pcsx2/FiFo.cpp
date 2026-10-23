@@ -13,7 +13,7 @@
 bool vif1CpuFifoEnabled()
 {
 	// Finish accepted writes even if the compatibility option is changed.
-	return EmuConfig.Gamefixes.VUCommunicationHack || vif1CpuFifoPending();
+	return EmuConfig.Gamefixes.VUCommunicationHack || vif1Regs.stat.ER0 || vif1CpuFifoPending();
 }
 
 static std::vector<u32> s_vif1_cpu_words;
@@ -41,6 +41,18 @@ bool vif1CpuFifoActive()
 bool vif1CpuFifoPending()
 {
 	return !s_vif1_cpu_words.empty();
+}
+
+u32 vif1DeferErrorInput(const u32* data, u32 words)
+{
+	const u32 accepted = std::min(words, 64u - static_cast<u32>(s_vif1_cpu_words.size()));
+	s_vif1_cpu_words.insert(s_vif1_cpu_words.end(), data, data + accepted);
+	return accepted;
+}
+
+bool vif1ErrorInputFull()
+{
+	return vif1Regs.stat.ER0 && s_vif1_cpu_words.size() == 64;
 }
 
 void vif1CpuFifoReset()
@@ -106,7 +118,7 @@ void vif1CpuFifoDrain()
 	if (!vif1CpuFifoEnabled() || s_vif1_cpu_words.empty())
 		return;
 	if (s_vif1_cpu_draining || vif1Regs.stat.FDR ||
-		vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
+		vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS | VIF1_STAT_ER0))
 		return;
 	s_vif1_cpu_draining = true;
 	// Pending CPU words precede a newly started DMA. Keep its word offset

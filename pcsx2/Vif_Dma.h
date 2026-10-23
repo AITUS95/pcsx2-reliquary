@@ -129,6 +129,8 @@ class SaveStateBase;
 bool vif1CpuFifoEnabled();
 bool vif1CpuFifoActive();
 bool vif1CpuFifoPending();
+u32 vif1DeferErrorInput(const u32* data, u32 words);
+bool vif1ErrorInputFull();
 bool vif1CpuFifoBusBlocked();
 const bool* vif1CpuFifoBusBlockedAddress();
 void vif1CpuFifoDrain();

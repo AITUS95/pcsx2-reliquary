@@ -166,6 +166,12 @@ __fi void vif1SetupTransfer()
 	if (vif1ch.chcr.TTE)
 	{
 		// Transfer dma tag if tte is set
+		// The observed V4-32 mismatch is detected at a vector boundary. Keep
+		// other formats and partial-vector admission on their existing paths.
+		const bool tag_mismatch = !vif1Regs.err.ME0 && !vif1Regs.stat.ER0 &&
+		                          !vif1.irqoffset.enabled && vif1.cmd == 0x6c && vif1.pass &&
+		                          vif1Regs.mode == 0 && vif1Regs.cycle.cl == 1 && vif1Regs.cycle.wl == 1 &&
+		                          nVif[1].bSize == 0;
 
 		bool ret;
 
@@ -190,6 +196,8 @@ __fi void vif1SetupTransfer()
 			ret = VIF1transfer((u32*)&masked_tag + 2, 2, true); //Transfer Tag
 			//ret = VIF1transfer((u32*)ptag + 2, 2);  //Transfer Tag
 		}
+		if (tag_mismatch && !vif1.vifpacketsize)
+			vif1Regs.stat.ER0 = true;
 
 		if (!ret && vif1.irqoffset.enabled)
 		{
@@ -278,7 +286,7 @@ __fi void vif1VUFinish()
 
 __fi void vif1Interrupt()
 {
-	if (vif1CpuFifoPending())
+	if (vif1CpuFifoPending() && !vif1Regs.stat.ER0)
 	{
 		vif1CpuFifoDrain();
 		if (vif1CpuFifoPending())
@@ -391,7 +399,7 @@ __fi void vif1Interrupt()
 	//Mirroring change to VIF0
 	if (vif1.cmd)
 	{
-		if (vif1.done && (vif1ch.qwc == 0))
+		if (vif1.done && (vif1ch.qwc == 0) && !(vif1Regs.stat.ER0 && vif1CpuFifoPending()))
 			vif1Regs.stat.VPS = VPS_WAITING;
 	}
 	else
@@ -402,6 +410,11 @@ __fi void vif1Interrupt()
 	if (vif1.inprogress & 0x1)
 	{
 		_VIF1chain();
+		if (vif1ch.qwc && vif1ErrorInputFull())
+		{
+			CPU_SET_DMASTALL(DMAC_VIF1, true);
+			return;
+		}
 		// VIF_NORMAL_FROM_MEM_MODE is a very slow operation.
 		// Timesplitters 2 depends on this beeing a bit higher than 128.
 		if (vif1ch.chcr.DIR)
