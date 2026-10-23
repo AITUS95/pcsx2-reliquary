@@ -326,6 +326,49 @@ static __fi u8* getVUptr(uint idx, int offset)
 	return (u8*)(vuRegs[idx].Mem + (offset & (idx ? 0x3ff0 : 0xff0)));
 }
 
+static int nVifUnpackV4_32Input(const u8* data, u32 words)
+{
+	nVifStruct& v = nVif[1];
+	u32 bytes = words * sizeof(u32);
+	if (v.bSize)
+	{
+		pxAssert(v.bSize + bytes <= sizeof(v.buffer));
+		std::memcpy(v.buffer + v.bSize, data, bytes);
+		bytes += v.bSize;
+		data = v.buffer;
+	}
+
+	// Publish complete vectors without waiting for the entire command. A split
+	// vector remains owned by the input buffer, including across a savestate.
+	const u32 vectors = bytes / 16;
+	const u32 complete_bytes = vectors * 16;
+	const u32 remaining_bytes = bytes - complete_bytes;
+	if (vectors)
+	{
+		const u32 address = vif1.tag.addr;
+		vif1Regs.num = vectors;
+		if (MTVU_ASYNC)
+			vu1Thread.VifUnpack(vif1, vif1Regs, data, complete_bytes, 0);
+		else if (newVifDynaRec)
+			dVifUnpack<1>(data, false);
+		else
+			_nVifUnpack(1, data, vif1Regs.mode, false);
+		vif1.tag.addr = (address + complete_bytes) & 0x3ff0;
+	}
+	if (remaining_bytes)
+		std::memmove(v.buffer, data + complete_bytes, remaining_bytes);
+	v.bSize = remaining_bytes;
+	vif1.tag.size -= words;
+	vif1Regs.num = (vif1.tag.size + remaining_bytes / sizeof(u32) + 3) / 4;
+	if (!vif1.tag.size)
+	{
+		pxAssert(!remaining_bytes);
+		vif1.pass = 0;
+		vif1.cmd = 0;
+	}
+	return words;
+}
+
 
 _vifT int nVifUnpack(const u8* data)
 {
@@ -339,6 +382,10 @@ _vifT int nVifUnpack(const u8* data)
 	s32        size   = ret << 2;
 	const bool v3_8 = (vif.cmd & 0x0f) == 10;
 	u32 readAheadSize = v3_8 && vif.vifpacketsize > ret ? sizeof(u32) : 0;
+
+	if (idx == 1 && vif.cmd == 0x6c && vifRegs.mode == 0 && vifRegs.cycle.cl == 1 && wl == 1 &&
+		(ret != vif.tag.size || v.bSize))
+		return nVifUnpackV4_32Input(data, ret);
 
 	if (ret == vif.tag.size) // Full Transfer
 	{
