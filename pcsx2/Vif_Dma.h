@@ -131,6 +131,7 @@ bool vif1CpuFifoActive();
 bool vif1CpuFifoPending();
 u32 vif1DeferErrorInput(const u32* data, u32 words, bool dma_input);
 u32 vif1InputFifoCount();
+bool vif1CpuFlushWindowActive();
 u32 vif1DeferDmaInput(const u32* data, u32 words, u32 partial_qw);
 bool vif1ErrorInputFull();
 bool vif1FlushInputFull();
