@@ -342,7 +342,7 @@ __fi void vif1Interrupt()
 			return;
 		}
 		vif1Regs.stat.VGW = 0; //Path 3 isn't busy so we don't need to wait for it.
-		vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+		vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 		//Simulated GS transfer time done, clear the flags
 	}
 
@@ -390,7 +390,7 @@ __fi void vif1Interrupt()
 
 			//NFSHPS stalls when the whole packet has gone across (it stalls in the last 32bit cmd)
 			//In this case VIF will end
-			vif1Regs.stat.FQC = std::min((u32)0x10, vif1ch.qwc);
+			vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min((u32)0x10, vif1ch.qwc);
 			if ((vif1ch.qwc > 0 || !vif1.done) && !CHECK_VIF1STALLHACK)
 			{
 				vif1Regs.stat.VPS = VPS_DECODING; //If there's more data you need to say it's decoding the next VIF CMD (Onimusha - Blade Warriors)
@@ -427,7 +427,7 @@ __fi void vif1Interrupt()
 		// VIF_NORMAL_FROM_MEM_MODE is a very slow operation.
 		// Timesplitters 2 depends on this beeing a bit higher than 128.
 		if (vif1ch.chcr.DIR)
-			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+			vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
 		{
@@ -455,7 +455,7 @@ __fi void vif1Interrupt()
 		if ((vif1.inprogress & 0x1) == 0)
 			vif1SetupTransfer();
 		if (vif1ch.chcr.DIR)
-			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+			vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
 		{
@@ -492,7 +492,7 @@ __fi void vif1Interrupt()
 	}
 
 	if (vif1ch.chcr.DIR)
-		vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
+		vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min(vif1ch.qwc, (u32)16);
 
 	vif1ch.chcr.STR = false;
 	vif1.vifstalled.enabled = false;
@@ -559,7 +559,7 @@ void dmaVIF1()
 	}
 
 	if (vif1ch.chcr.DIR)
-		vif1Regs.stat.FQC = std::min((u32)0x10, vif1ch.qwc);
+		vif1Regs.stat.FQC = (vif1Regs.stat.ER0 && !vif1Regs.stat.FDR) ? vif1InputFifoCount() : std::min((u32)0x10, vif1ch.qwc);
 
 	// Check VIF isn't stalled before starting the loop.
 	// Batman Vengence does something stupid and instead of cancelling a stall it tries to restart VIF, THEN check the stall

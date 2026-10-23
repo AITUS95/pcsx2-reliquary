@@ -10,7 +10,8 @@
 //------------------------------------------------------------------
 
 // Interprets packet
-_vifT void vifTransferLoop(u32* &data) {
+_vifT void vifTransferLoop(u32*& data, bool dma_input = false)
+{
 	vifStruct& vifX = GetVifX;
 
 	u32& pSize = vifX.vifpacketsize;
@@ -25,9 +26,10 @@ _vifT void vifTransferLoop(u32* &data) {
 		{
 			// DMA may finish while the decoder is stopped. Keep its input owned
 			// until STC; changing the error mask alone does not resume execution.
-			const u32 accepted = vif1DeferErrorInput(data, pSize);
+			const u32 accepted = vif1DeferErrorInput(data, pSize, dma_input);
 			data += accepted;
 			pSize -= accepted;
+			vif1Regs.stat.FQC = vif1InputFifoCount();
 			return;
 		}
 	}
@@ -80,7 +82,7 @@ _vifT static __fi bool vifTransfer(u32* data, int size, bool TTE, bool dma_input
 	int transferred = vifX.irqoffset.enabled ? vifX.irqoffset.value : 0;
 
 	vifX.vifpacketsize = size;
-	vifTransferLoop<idx>(data);
+	vifTransferLoop<idx>(data, dma_input);
 
 	transferred += size - vifX.vifpacketsize;
 	if constexpr (idx == 1)
