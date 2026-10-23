@@ -81,9 +81,10 @@ static void vif1UpdateCpuFifoStatus()
 {
 	if (vif1.cmd)
 	{
-		// DMA packet completion does not describe an exhausted CPU input queue.
-		const bool cpu_waiting_for_input = s_vif1_cpu_draining && s_vif1_cpu_words.empty() &&
-		                                   vif1.tag.size && !vif1.waitforvu && !vif1Regs.stat.VGW;
+		// A CPU fragment can exhaust the available input without completing DMA.
+		const bool cpu_input_empty = s_vif1_cpu_draining ? s_vif1_cpu_words.empty() : !vif1ch.chcr.STR;
+		const bool cpu_waiting_for_input = cpu_input_empty && vif1.tag.size &&
+		                                   !vif1.waitforvu && !vif1Regs.stat.VGW;
 		if ((vif1.done || cpu_waiting_for_input) && !vif1ch.qwc)
 			vif1Regs.stat.VPS = VPS_WAITING;
 	}
